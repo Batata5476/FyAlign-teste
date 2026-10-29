@@ -19,10 +19,16 @@ import {
   ShieldAlert,
   AlertTriangle,
   CheckCircle,
+  Lock,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OrganizationSwitcher } from '@/components/auth/OrganizationSwitcher';
-import { hasPermission, Permission } from '@/lib/auth/rbac';
+import { Permission, userHasPermission } from '@/lib/auth/rbac';
+import {
+  AuthProvider,
+  FrontendAuthUser,
+  getRequiredRoutePermission,
+} from '@/lib/auth/AuthContext';
 
 interface NavItem {
   label: string;
@@ -43,7 +49,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<FrontendAuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadUser = useCallback(async () => {
@@ -149,13 +155,18 @@ export default function DashboardLayout({
     },
   ];
 
-  // 2. Filtragem dinâmica com hasPermission
+  // 2. Filtragem dinâmica exclusivamente via user.permissions (fonte oficial de /api/auth/me)
   const allowedSections = navSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => hasPermission(user?.role || '', item.permission)),
+      items: section.items.filter((item) => userHasPermission(user, item.permission)),
     }))
     .filter((section) => section.items.length > 0);
+
+  // 3. Proteção uniforme de páginas em navegação direta por URL
+  const requiredRoutePermission = getRequiredRoutePermission(pathname || '');
+  const isRouteAllowed =
+    !requiredRoutePermission || userHasPermission(user, requiredRoutePermission);
 
   return (
     <div className="app-container">
@@ -563,8 +574,64 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Content Area */}
-        <main className="app-content">{children}</main>
+        {/* Content Area com Contexto Oficial de Permissões e Proteção de Rota */}
+        <AuthProvider user={user} refreshUser={loadUser}>
+          <main className="app-content">
+            {isRouteAllowed ? (
+              children
+            ) : (
+              <div
+                className="glass-panel"
+                style={{
+                  maxWidth: '580px',
+                  margin: '56px auto',
+                  padding: '32px',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  background: 'rgba(239, 68, 68, 0.06)',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    borderRadius: '50%',
+                    background: 'rgba(239, 68, 68, 0.14)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px',
+                  }}
+                >
+                  <Lock size={24} color="#f87171" />
+                </div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
+                  Acesso Restrito por Permissão
+                </h2>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '20px' }}>
+                  O seu vínculo atual na organização{' '}
+                  <strong style={{ color: 'var(--text-main)' }}>
+                    {user?.organization?.tradeName}
+                  </strong>{' '}
+                  não possui a permissão{' '}
+                  <code style={{ color: 'var(--cyan-primary)', fontWeight: 700 }}>
+                    {requiredRoutePermission}
+                  </code>{' '}
+                  necessária para acessar esta página.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/dashboard')}
+                  className="btn-primary"
+                  style={{ padding: '10px 20px' }}
+                >
+                  Voltar ao Painel Principal
+                </button>
+              </div>
+            )}
+          </main>
+        </AuthProvider>
       </div>
     </div>
   );

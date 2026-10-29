@@ -70,18 +70,30 @@ enum CaseStatus {
   DRAFT
   SUBMITTED
   IN_TRIAGE
+  TRIAGE
   PENDING_DOCS
   IN_PLANNING_3D
+  PLANNING
+  CAD_DESIGN
   SETUP_AVAILABLE
+  WAITING_DOCTOR_APPROVAL
+  PENDING_APPROVAL
   ADJUSTMENT_REQUESTED
+  REVISION_REQUESTED
+  APPROVED
   APPROVED_BY_DOCTOR
+  READY_FOR_PRODUCTION
   IN_PRODUCTION
+  QC
   QUALITY_CONTROL
+  PARTIALLY_SHIPPED
+  SHIPPED
   DISPATCHED
   DELIVERED
   IN_TREATMENT
   COMPLETED
   REFINEMENT_REQUESTED
+  CANCELLED
 }
 
 enum TreatedArches {
@@ -213,6 +225,7 @@ model Membership {
   doctorCases     Case[]           @relation("DoctorCaseMemberships")
   auditLogs       AuditLog[]
   sessions        Session[]
+  permissions     MembershipPermission[]
 
   @@unique([userId, organizationId, role])
   @@index([userId])
@@ -221,7 +234,23 @@ model Membership {
 }
 
 // ============================================================================
-// 4. CONVITES (Token Seguro e Atribuição Travada)
+// 3.1 PERMISSÕES DE VÍNCULO (Granular Custom Permissions per Membership)
+// ============================================================================
+model MembershipPermission {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  membershipId String     @map("membership_id") @db.Uuid
+  permission   String     @db.VarChar(100)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, permission])
+  @@index([membershipId])
+  @@map("membership_permissions")
+}
+
+// ============================================================================
+// 4. CONVITES (Token Seguro e Atribuição Travada com Permissões Concedidas)
 // ============================================================================
 model Invitation {
   id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -238,12 +267,29 @@ model Invitation {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  invitedBy       User             @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       User                   @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+  permissions     InvitationPermission[]
 
   @@index([email])
   @@index([organizationId])
   @@map("invitations")
+}
+
+// ============================================================================
+// 4.1 PERMISSÕES DO CONVITE (Permissões granulares atribuídas no momento do convite)
+// ============================================================================
+model InvitationPermission {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invitationId String     @map("invitation_id") @db.Uuid
+  permission   String     @db.VarChar(100)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  invitation   Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+
+  @@unique([invitationId, permission])
+  @@index([invitationId])
+  @@map("invitation_permissions")
 }
 
 // ============================================================================
@@ -303,9 +349,9 @@ model Case {
   treatedArches         TreatedArches    @default(BOTH) @map("treated_arches")
   chiefComplaint        String?          @map("chief_complaint") @db.Text
   angleClass            String?          @map("angle_class") @db.VarChar(50)
-  restrictedTeethFdi    Json?            @map("restricted_teeth_fdi")
-  iprPreferences        Json?            @map("ipr_preferences")
-  attachmentPreferences Json?            @map("attachment_preferences")
+  restrictedTeethFdi    String?          @map("restricted_teeth_fdi") @db.Text
+  iprPreferences        String?          @map("ipr_preferences") @db.Text
+  attachmentPreferences String?          @map("attachment_preferences") @db.Text
   doctorNotes           String?          @map("doctor_notes") @db.Text
   assignedPlannerId     String?          @map("assigned_planner_id") @db.Uuid
   parentCaseId          String?          @map("parent_case_id") @db.Uuid
@@ -329,6 +375,11 @@ model Case {
   orders                Order[]
   assignments           CaseAssignment[]
 
+  // Relações Clínicas Estruturadas (Contrato Canônico)
+  clinicalCondition     ClinicalCondition?
+  treatmentPlan         TreatmentPlan?
+  consents              CaseConsent[]
+
   // Relações Operacionais e Comerciais (Arquitetura Final v1.0)
   commercialContract    CaseCommercialContract?
   productionUnits       ProductionUnit[]
@@ -346,6 +397,7 @@ model CaseFile {
   caseId            String     @map("case_id") @db.Uuid
   slotNumber        Int        @map("slot_number")
   category          String     @db.VarChar(50)
+  type              String?    @db.VarChar(100)
   originalFileName  String     @map("original_file_name") @db.VarChar(255)
   storageKey        String     @map("storage_key") @db.VarChar(500)
   mimeType          String     @map("mime_type") @db.VarChar(100)
@@ -372,8 +424,8 @@ model Setup {
   upperAlignersCount  Int          @default(0) @map("upper_aligners_count")
   lowerAlignersCount  Int          @default(0) @map("lower_aligners_count")
   modelStorageUrl     String?      @map("model_storage_url") @db.VarChar(500)
-  iprSchedule         Json?        @map("ipr_schedule")
-  attachmentSchedule  Json?        @map("attachment_schedule")
+  iprSchedule         String?      @map("ipr_schedule") @db.Text
+  attachmentSchedule  String?      @map("attachment_schedule") @db.Text
   plannerComments     String?      @map("planner_comments") @db.Text
   approvedByDoctorId  String?      @map("approved_by_doctor_id") @db.Uuid
   approvedAt          DateTime?    @map("approved_at")
@@ -393,7 +445,7 @@ model SetupStage {
   stageIndex              Int      @map("stage_index")
   upperMeshStorageKey     String?  @map("upper_mesh_storage_key") @db.VarChar(500)
   lowerMeshStorageKey     String?  @map("lower_mesh_storage_key") @db.VarChar(500)
-  toothTransformMatrices  Json?    @map("tooth_transform_matrices")
+  toothTransformMatrices  String?  @map("tooth_transform_matrices") @db.Text
 
   setup                   Setup    @relation(fields: [setupId], references: [id], onDelete: Cascade)
 
@@ -408,8 +460,8 @@ model CaseMessage {
   caseId              String   @map("case_id") @db.Uuid
   senderId            String   @map("sender_id") @db.Uuid
   content             String   @db.Text
-  mentionedTeethFdi   Json?    @map("mentioned_teeth_fdi")
-  attachmentUrls      Json?    @map("attachment_urls")
+  mentionedTeethFdi   String?  @map("mentioned_teeth_fdi") @db.Text
+  attachmentUrls      String?  @map("attachment_urls") @db.Text
   isInternalLabOnly   Boolean  @default(false) @map("is_internal_lab_only")
   createdAt           DateTime @default(now()) @map("created_at")
 
@@ -430,7 +482,7 @@ model AuditLog {
   membershipId    String?       @map("membership_id") @db.Uuid
   action          String        @db.VarChar(100)
   entityAffected  String        @map("entity_affected") @db.VarChar(100)
-  payloadDiff     Json?         @map("payload_diff")
+  payloadDiff     String?       @map("payload_diff") @db.Text
   ipAddress       String        @map("ip_address") @db.VarChar(45)
   userAgent       String        @map("user_agent") @db.VarChar(255)
   createdAt       DateTime      @default(now()) @map("created_at")
@@ -454,7 +506,7 @@ model Order {
   caseId          String        @map("case_id") @db.Uuid
   orderCode       String        @unique @map("order_code") @db.VarChar(50)
   planType        String        @map("plan_type") @db.VarChar(50)
-  amount          Decimal       @db.Decimal(10, 2)
+  amount          Float         @db.DoublePrecision
   paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
   trackingCode    String?       @map("tracking_code") @db.VarChar(100)
   carrierName     String?       @map("carrier_name") @db.VarChar(100)
@@ -492,7 +544,93 @@ model Session {
 }
 
 // ============================================================================
-// 14. CONTRATO COMERCIAL ÚNICO POR CASO E VERSÕES IMUTÁVEIS
+// 14. CONDIÇÃO CLÍNICA EXISTENTE (ClinicalCondition: Oclusão e Linha Média Atual)
+// ============================================================================
+model ClinicalCondition {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId       String   @unique @map("case_id") @db.Uuid
+
+  upperMidline String   @map("upper_midline") @db.VarChar(50) // CENTERED, DEVIATED_RIGHT, DEVIATED_LEFT
+  lowerMidline String   @map("lower_midline") @db.VarChar(50) // CENTERED, DEVIATED_RIGHT, DEVIATED_LEFT
+
+  canineRight  String   @map("canine_right") @db.VarChar(50)  // CLASS_I, CLASS_II, CLASS_III
+  canineLeft   String   @map("canine_left") @db.VarChar(50)   // CLASS_I, CLASS_II, CLASS_III
+
+  molarRight   String   @map("molar_right") @db.VarChar(50)   // CLASS_I, CLASS_II, CLASS_III
+  molarLeft    String   @map("molar_left") @db.VarChar(50)    // CLASS_I, CLASS_II, CLASS_III
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("clinical_conditions")
+}
+
+// ============================================================================
+// 15. PLANO DE TRATAMENTO PARAMETRIZADO (TreatmentPlan: Ações Biomecânicas)
+// ============================================================================
+model TreatmentPlan {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId                 String   @unique @map("case_id") @db.Uuid
+
+  upperMidline           String   @map("upper_midline") @db.VarChar(50)       // MAINTAIN, IMPROVE
+  lowerMidline           String   @map("lower_midline") @db.VarChar(50)       // MAINTAIN, IMPROVE
+  overjet                String   @db.VarChar(50)                             // MAINTAIN, IMPROVE
+  overbite               String   @db.VarChar(50)                             // MAINTAIN, IMPROVE
+  archForm               String   @map("arch_form") @db.VarChar(50)           // MAINTAIN, IMPROVE
+  expansion              String   @db.VarChar(50)                             // MAINTAIN, IMPROVE
+  canineRelationship     String   @map("canine_relationship") @db.VarChar(50) // MAINTAIN, IMPROVE
+  molarRelationship      String   @map("molar_relationship") @db.VarChar(50)  // MAINTAIN, IMPROVE
+
+  ipr                    Boolean  @default(false)
+
+  attachment             Boolean  @default(false)
+  intermaxillaryElastic  String   @default("NO") @map("intermaxillary_elastic") @db.VarChar(50) // NO, IF_NECESSARY, YES
+
+  classIICorrection      String   @default("DO_NOT_CORRECT") @map("class_ii_correction") @db.VarChar(50)
+  classIIICorrection     String   @default("DO_NOT_CORRECT") @map("class_iii_correction") @db.VarChar(50)
+
+  smartAttachments       String?  @map("smart_attachments") @db.Text
+  diastemas              String   @default("NONE") @db.VarChar(50) // NONE, CLOSE_ALL, CLOSE_SELECTED
+
+  additionalInstructions String?  @map("additional_instructions") @db.Text
+
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  case                   Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("treatment_plans")
+}
+
+// ============================================================================
+// 16. TERMO DE CONSENTIMENTO E AUDITORIA (CaseConsent: Fonte da Verdade Legal)
+// ============================================================================
+model CaseConsent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId          String   @map("case_id") @db.Uuid
+
+  policyVersion   String   @map("policy_version") @db.VarChar(50)
+  policyHash      String   @map("policy_hash") @db.VarChar(128)
+
+  acceptedAt      DateTime @default(now()) @map("accepted_at")
+  ipAddress       String?  @map("ip_address") @db.VarChar(45)
+  userAgent       String?  @map("user_agent") @db.VarChar(255)
+
+  scrollCompleted Boolean  @default(false) @map("scroll_completed")
+
+  signatureKey    String?  @map("signature_key") @db.VarChar(500)
+  signatureHash   String?  @map("signature_hash") @db.VarChar(128)
+
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("case_consents")
+}
+
+// ============================================================================
+// 17. CONTRATO COMERCIAL ÚNICO POR CASO E VERSÕES IMUTÁVEIS
 // ============================================================================
 model CaseCommercialContract {
   id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -557,7 +695,7 @@ model ContractVersion {
 }
 
 // ============================================================================
-// 15. UNIDADES DE PRODUÇÃO (RASTREAMENTO HÍBRIDO: PARES E LOTES)
+// 18. UNIDADES DE PRODUÇÃO (RASTREAMENTO HÍBRIDO: PARES E LOTES)
 // ============================================================================
 model ProductionUnit {
   id                  String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -597,7 +735,7 @@ model ProductionUnit {
 }
 
 // ============================================================================
-// 16. EXPEDIÇÃO FÍSICA E REMESSAS (ENTREGAS PARCIAIS COM INTEGRIDADE)
+// 19. EXPEDIÇÃO FÍSICA E REMESSAS (ENTREGAS PARCIAIS COM INTEGRIDADE)
 // ============================================================================
 model Shipment {
   id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -638,7 +776,7 @@ model ShipmentItem {
 }
 
 // ============================================================================
-// 17. REFINAMENTOS DESACOPLADOS (SEM DUPLICAR O CASO CLÍNICO)
+// 20. REFINAMENTOS DESACOPLADOS (SEM DUPLICAR O CASO CLÍNICO)
 // ============================================================================
 model RefinementRequest {
   id                          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

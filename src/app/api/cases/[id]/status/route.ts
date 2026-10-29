@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth/session';
-import { isFyAlignInternal } from '@/lib/auth/rbac';
+import { hasPermission, isFyAlignInternal } from '@/lib/auth/rbac';
 
 const updateStatusSchema = z.object({
   status: z.enum([
@@ -23,15 +23,21 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
+  const sessionUser = await getCurrentUser(req);
   if (!sessionUser) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   }
 
-  // Apenas equipe do laboratório ou super admin pode transicionar livremente os status fabris
-  if (!isFyAlignInternal(sessionUser.role)) {
+  // Apenas equipe do laboratório com permissão operacional/triagem ativa pode atualizar a esteira fabril
+  const canUpdatePipeline =
+    isFyAlignInternal(sessionUser.role) &&
+    (hasPermission(sessionUser, 'PRODUCTION_UPDATE') ||
+      hasPermission(sessionUser, 'TRIAGE_CASE') ||
+      hasPermission(sessionUser, 'CASE_UPDATE'));
+
+  if (!canUpdatePipeline) {
     return NextResponse.json(
-      { error: 'Apenas membros da produção e planejamento FyAlign podem atualizar a esteira fabril.' },
+      { error: 'Apenas membros da produção e planejamento FyAlign com permissão ativa podem atualizar a esteira fabril.' },
       { status: 403 }
     );
   }

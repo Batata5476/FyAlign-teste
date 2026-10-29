@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { comparePassword } from '@/lib/auth/password';
 import { signAccessToken, signRefreshToken, TokenPayload } from '@/lib/auth/jwt';
+import { getEffectivePermissions } from '@/lib/auth/rbac';
 
 const loginSchema = z.object({
   email: z.string().email('E-mail inválido'),
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         organization: true,
+        permissions: true,
       },
     });
 
@@ -126,9 +128,11 @@ export async function POST(req: NextRequest) {
       success: true,
       user: {
         id: user.id,
+        name: user.fullName,
         fullName: user.fullName,
         email: user.email,
         role: activeMembership.role,
+        permissions: getEffectivePermissions(activeMembership as any),
         croStatus: activeMembership.croStatus,
         activeMembershipId: activeMembership.id,
         organization: {
@@ -144,6 +148,7 @@ export async function POST(req: NextRequest) {
           role: m.role,
           status: m.status,
           croStatus: m.croStatus,
+          permissions: getEffectivePermissions(m as any),
         })),
         // Compatibilidade legada
         professionalIdCro: tokenPayload.professionalIdCro,

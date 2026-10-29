@@ -1,26 +1,32 @@
 /**
  * FyAlign B2B - Motor Central de RBAC (Role-Based Access Control)
- * Fonte de verdade para Papéis, Permissões, Status e Regras de Governança.
+ * Fonte única da verdade para Papéis, Tetos (ROLE_CEILINGS), Defaults e Governança Granular.
+ *
+ * Invariante fundamental:
+ *   effectivePermissions = ROLE_CEILINGS[role] ∩ MembershipPermission
+ *   (com fallback seguro para ROLE_DEFAULT_PERMISSIONS[role] apenas em vínculos legados sem linhas em MembershipPermission)
  */
 
 // ============================================================================
 // 1. PAPÉIS DO SISTEMA (ROLES)
 // ============================================================================
 export const ROLES = {
-  // Mundos Internos FyAlign
+  // Domínio Interno FyAlign (Laboratório & Matriz)
   SUPER_ADMIN: 'SUPER_ADMIN',
   PLANNER_3D: 'PLANNER_3D',
   PRODUCTION_QC: 'PRODUCTION_QC',
   FINANCE: 'FINANCE',
   SUPPORT: 'SUPPORT',
 
-  // Mundos das Clínicas (Tenants)
+  // Domínio das Clínicas Credenciadas (Tenants)
   CLINIC_ADMIN: 'CLINIC_ADMIN',
   DOCTOR: 'DOCTOR',
   CLINIC_ASSISTANT: 'CLINIC_ASSISTANT',
 } as const;
 
 export type UserRole = (typeof ROLES)[keyof typeof ROLES];
+
+export const ALL_ROLES: readonly UserRole[] = Object.values(ROLES);
 
 // ============================================================================
 // 2. STATUS DE VÍNCULO (MEMBERSHIP STATUS)
@@ -66,10 +72,32 @@ export const ORGANIZATION_STATUS = {
 export type OrganizationStatus = (typeof ORGANIZATION_STATUS)[keyof typeof ORGANIZATION_STATUS];
 
 // ============================================================================
-// 5. CATÁLOGO DE PERMISSÕES GRANULARES
+// 5. CATÁLOGO CANÔNICO DE PERMISSÕES E PAPÉIS ELEGÍVEIS AO TETO
+// Cada chave define exatamente quais papéis possuem essa permissão em seu TETO MÁXIMO.
 // ============================================================================
 export const PERMISSIONS = {
-  // Casos Clínicos
+  // 5.1 Pacientes (FINANCE e PRODUCTION_QC não acessam prontuários — Data Minimization LGPD)
+  PATIENT_READ: [
+    ROLES.SUPER_ADMIN,
+    ROLES.SUPPORT,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  PATIENT_CREATE: [
+    ROLES.SUPER_ADMIN,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  PATIENT_UPDATE: [
+    ROLES.SUPER_ADMIN,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+
+  // 5.2 Casos Clínicos
   CASE_READ: [
     ROLES.SUPER_ADMIN,
     ROLES.PLANNER_3D,
@@ -79,28 +107,23 @@ export const PERMISSIONS = {
     ROLES.DOCTOR,
     ROLES.CLINIC_ASSISTANT,
   ],
-  CASE_CREATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT],
-  CASE_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
-  CASE_DELETE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
-
-  // Setups Virtuais 3D
-  SETUP_READ: [
+  CASE_CREATE: [
     ROLES.SUPER_ADMIN,
-    ROLES.PLANNER_3D,
-    ROLES.PRODUCTION_QC,
-    ROLES.SUPPORT,
     ROLES.CLINIC_ADMIN,
     ROLES.DOCTOR,
     ROLES.CLINIC_ASSISTANT,
   ],
-  SETUP_CREATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
-  SETUP_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
-  SETUP_PUBLISH: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
-  SETUP_APPROVE: [ROLES.SUPER_ADMIN, ROLES.DOCTOR], // Exige CRO_STATUS === 'VERIFIED'
-  SETUP_REJECT: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
-  SETUP_REVISION_REQUEST: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  CASE_UPDATE: [
+    ROLES.SUPER_ADMIN,
+    ROLES.PLANNER_3D,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  SUBMIT_CASE: [ROLES.SUPER_ADMIN, ROLES.DOCTOR], // Exige CRO_STATUS === 'VERIFIED' (RN-02)
+  CASE_DELETE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
 
-  // Arquivos e Exames Médicos
+  // 5.3 Arquivos e Documentação Clínica
   FILE_READ: [
     ROLES.SUPER_ADMIN,
     ROLES.PLANNER_3D,
@@ -109,7 +132,13 @@ export const PERMISSIONS = {
     ROLES.DOCTOR,
     ROLES.CLINIC_ASSISTANT,
   ],
-  FILE_UPLOAD: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.CLINIC_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT],
+  FILE_UPLOAD: [
+    ROLES.SUPER_ADMIN,
+    ROLES.PLANNER_3D,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
   FILE_DOWNLOAD: [
     ROLES.SUPER_ADMIN,
     ROLES.PLANNER_3D,
@@ -120,58 +149,36 @@ export const PERMISSIONS = {
   ],
   FILE_DELETE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
 
-  // Pacientes
-  PATIENT_READ: [ROLES.SUPER_ADMIN, ROLES.SUPPORT, ROLES.CLINIC_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT],
-  PATIENT_CREATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT],
-  PATIENT_UPDATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
-
-  // Fábrica, Esteira e Qualidade
-  PRODUCTION_READ: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
-  PRODUCTION_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
-  QC_READ: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
-  QC_EXECUTE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
-  DISPATCH_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
-  SHIPMENT_READ: [
+  // 5.4 Setups Virtuais 3D
+  SETUP_READ: [
     ROLES.SUPER_ADMIN,
+    ROLES.PLANNER_3D,
     ROLES.PRODUCTION_QC,
     ROLES.SUPPORT,
     ROLES.CLINIC_ADMIN,
     ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
   ],
+  SETUP_CREATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
+  SETUP_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.DOCTOR],
+  SETUP_PUBLISH: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
+  SETUP_APPROVE: [ROLES.SUPER_ADMIN, ROLES.DOCTOR], // Exige CRO_STATUS === 'VERIFIED' (RN-02)
+  SETUP_REJECT: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  SETUP_REVISION_REQUEST: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
 
-  // Ordens e Faturamento (FINANCE tem acesso estrito aqui, sem ver prontuário clínico)
-  ORDER_READ: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.PRODUCTION_QC, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
-  ORDER_CREATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
-  BILLING_READ: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.CLINIC_ADMIN],
-  BILLING_MANAGE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  // 5.5 Refinamentos Desacoplados (Arquitetura v1.0)
+  REFINEMENT_REQUEST: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
+  REFINEMENT_CLINICAL_APPROVE: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  REFINEMENT_COMMERCIAL_APPROVE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
 
-  // Gestão de Equipe e Convites
-  TEAM_READ: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
-  TEAM_INVITE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
-  TEAM_MANAGE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
-
-  // Gestão de Organizações
-  ORG_UPDATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
-  ORG_MANAGE_ALL: [ROLES.SUPER_ADMIN],
-
-  // Auditoria e Governança LGPD
-  AUDIT_READ: [ROLES.SUPER_ADMIN],
-  AUDIT_EXPORT: [ROLES.SUPER_ADMIN],
-
-  // Contratos Comerciais (Arquitetura Final v1.0)
-  CONTRACT_READ: [
+  // 5.6 Produção Fabril, Cronograma e Lotes Híbridos
+  PRODUCTION_READ: [
     ROLES.SUPER_ADMIN,
-    ROLES.CLINIC_ADMIN,
-    ROLES.DOCTOR,
-    ROLES.FINANCE,
+    ROLES.PLANNER_3D,
+    ROLES.PRODUCTION_QC,
     ROLES.SUPPORT,
   ],
-  CONTRACT_CREATE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
-  CONTRACT_CONFIRM: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
-  CONTRACT_AMEND: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
-  SCHEDULE_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
-
-  // Produção Híbrida e Remessas
+  PRODUCTION_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
   PRODUCTION_UNIT_READ: [
     ROLES.SUPER_ADMIN,
     ROLES.PLANNER_3D,
@@ -181,51 +188,141 @@ export const PERMISSIONS = {
     ROLES.DOCTOR,
   ],
   PRODUCTION_UNIT_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
+  SCHEDULE_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
+
+  // 5.7 Controle de Qualidade (QC)
+  QC_READ: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
+  QC_EXECUTE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
   PRODUCTION_QC_RELEASE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+
+  // 5.8 Expedição e Remessas Parciais
+  SHIPMENT_READ: [
+    ROLES.SUPER_ADMIN,
+    ROLES.PRODUCTION_QC,
+    ROLES.SUPPORT,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
   SHIPMENT_CREATE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
   SHIPMENT_DISPATCH: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
   SHIPMENT_DELIVERY_CONFIRM: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
+  DISPATCH_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
 
-  // Refinamentos Desacoplados
-  REFINEMENT_REQUEST: [ROLES.SUPER_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ADMIN],
-  REFINEMENT_CLINICAL_APPROVE: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
-  REFINEMENT_COMMERCIAL_APPROVE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
-
-  // Administração Geral
-  SYSTEM_ADMIN: [ROLES.SUPER_ADMIN],
-
-  // Aliases para compatibilidade com código existente
-  CREATE_PATIENT: [ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT, ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
-  CREATE_CASE_DRAFT: [ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT, ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
-  SIGN_PRESCRIPTION: [ROLES.DOCTOR, ROLES.SUPER_ADMIN],
-  SUBMIT_CASE: [ROLES.DOCTOR, ROLES.SUPER_ADMIN],
-  UPLOAD_FILES: [ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT, ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
-  DELETE_FILES: [ROLES.DOCTOR, ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
-  VIEW_SETUP_3D: [
+  // 5.9 Contratos Comerciais, Ordens e Faturamento B2B
+  CONTRACT_READ: [
+    ROLES.SUPER_ADMIN,
+    ROLES.FINANCE,
+    ROLES.SUPPORT,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+  ],
+  CONTRACT_CREATE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  CONTRACT_CONFIRM: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  CONTRACT_AMEND: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  ORDER_READ: [
+    ROLES.SUPER_ADMIN,
+    ROLES.FINANCE,
+    ROLES.PRODUCTION_QC,
+    ROLES.SUPPORT,
+    ROLES.CLINIC_ADMIN,
     ROLES.DOCTOR,
     ROLES.CLINIC_ASSISTANT,
+  ],
+  ORDER_CREATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
+  BILLING_READ: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.CLINIC_ADMIN],
+  BILLING_MANAGE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+
+  // 5.10 Gestão de Equipe e Convites
+  TEAM_READ: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
+  TEAM_INVITE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
+  TEAM_MANAGE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
+
+  // 5.11 Organizações, Auditoria LGPD e Administração Master
+  ORG_UPDATE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
+  ORG_MANAGE_ALL: [ROLES.SUPER_ADMIN],
+  AUDIT_READ: [ROLES.SUPER_ADMIN],
+  AUDIT_EXPORT: [ROLES.SUPER_ADMIN],
+  SYSTEM_ADMIN: [ROLES.SUPER_ADMIN],
+
+  // 5.12 Aliases Legados de Compatibilidade (espelham estritamente suas permissões canônicas)
+  CREATE_PATIENT: [
+    ROLES.SUPER_ADMIN,
     ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  CREATE_CASE_DRAFT: [
+    ROLES.SUPER_ADMIN,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  SIGN_PRESCRIPTION: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  UPLOAD_FILES: [
+    ROLES.SUPER_ADMIN,
+    ROLES.PLANNER_3D,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  DELETE_FILES: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
+  VIEW_SETUP_3D: [
+    ROLES.SUPER_ADMIN,
     ROLES.PLANNER_3D,
     ROLES.PRODUCTION_QC,
     ROLES.SUPPORT,
-    ROLES.SUPER_ADMIN,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
   ],
-  PUBLISH_SETUP_3D: [ROLES.PLANNER_3D, ROLES.SUPER_ADMIN],
-  APPROVE_SETUP_3D: [ROLES.DOCTOR, ROLES.SUPER_ADMIN],
-  REQUEST_SETUP_ADJUSTMENT: [ROLES.DOCTOR, ROLES.SUPER_ADMIN],
-  TRIAGE_CASE: [ROLES.PLANNER_3D, ROLES.SUPER_ADMIN],
-  UPDATE_PRODUCTION_STATUS: [ROLES.PRODUCTION_QC, ROLES.SUPER_ADMIN],
-  DISPATCH_CASE: [ROLES.PRODUCTION_QC, ROLES.SUPER_ADMIN],
-  MANAGE_CLINIC_TEAM: [ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
-  VIEW_BILLING: [ROLES.FINANCE, ROLES.CLINIC_ADMIN, ROLES.SUPER_ADMIN],
+  PUBLISH_SETUP_3D: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
+  APPROVE_SETUP_3D: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  REQUEST_SETUP_ADJUSTMENT: [ROLES.SUPER_ADMIN, ROLES.DOCTOR],
+  TRIAGE_CASE: [
+    ROLES.SUPER_ADMIN,
+    ROLES.PLANNER_3D,
+    ROLES.CLINIC_ADMIN,
+    ROLES.DOCTOR,
+    ROLES.CLINIC_ASSISTANT,
+  ],
+  UPDATE_PRODUCTION_STATUS: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+  DISPATCH_CASE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+  MANAGE_CLINIC_TEAM: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
+  VIEW_BILLING: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.CLINIC_ADMIN],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 
-// ============================================================================
-// 5.1 CATÁLOGO DE MÓDULOS E PERMISSÕES GRANULARES (UI & GESTÃO)
-// ============================================================================
+/**
+ * Mapeamento oficial de Aliases Legados -> Permissão Canônica.
+ * Permite que vínculos com permissões granulares canônicas funcionem perfeitamente
+ * mesmo quando código legado consulta o nome antigo da permissão.
+ */
+export const LEGACY_PERMISSION_ALIASES = {
+  CREATE_PATIENT: 'PATIENT_CREATE',
+  CREATE_CASE_DRAFT: 'CASE_CREATE',
+  SIGN_PRESCRIPTION: 'SUBMIT_CASE',
+  UPLOAD_FILES: 'FILE_UPLOAD',
+  DELETE_FILES: 'FILE_DELETE',
+  VIEW_SETUP_3D: 'SETUP_READ',
+  PUBLISH_SETUP_3D: 'SETUP_PUBLISH',
+  APPROVE_SETUP_3D: 'SETUP_APPROVE',
+  REQUEST_SETUP_ADJUSTMENT: 'SETUP_REVISION_REQUEST',
+  TRIAGE_CASE: 'CASE_UPDATE',
+  UPDATE_PRODUCTION_STATUS: 'PRODUCTION_UPDATE',
+  DISPATCH_CASE: 'SHIPMENT_DISPATCH',
+  MANAGE_CLINIC_TEAM: 'TEAM_MANAGE',
+  VIEW_BILLING: 'BILLING_READ',
+} as const satisfies Record<string, Permission>;
 
+export type LegacyPermissionAlias = keyof typeof LEGACY_PERMISSION_ALIASES;
+
+// ============================================================================
+// 6. CATÁLOGO DE MÓDULOS E PERMISSÕES GRANULARES (UI & GESTÃO)
+// Cobre 100% das permissões canônicas do sistema para exibição transparente
+// no seletor de convites e edição de vínculos (incluindo módulos 🔒 fora do teto).
+// ============================================================================
 export interface PermissionDefinition {
   key: Permission;
   label: string;
@@ -258,7 +355,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       { key: 'CASE_READ', label: 'Visualizar Casos', description: 'Acessar lista e detalhes de casos clínicos' },
       { key: 'CASE_CREATE', label: 'Criar Casos', description: 'Iniciar novos rascunhos no Wizard Clínico' },
       { key: 'CASE_UPDATE', label: 'Editar Casos', description: 'Alterar formulário clínico, prescrição e preferências' },
-      { key: 'SUBMIT_CASE', label: 'Submeter Casos', description: 'Enviar caso formalmente para o laboratório (exige CRO)' },
+      { key: 'SUBMIT_CASE', label: 'Enviar / Assinar Casos', description: 'Submeter caso formalmente ao laboratório (exige CRO verificado)' },
       { key: 'CASE_DELETE', label: 'Excluir Casos', description: 'Remover rascunhos de casos clínicos cancelados' },
     ],
   },
@@ -267,9 +364,10 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     name: 'Arquivos Clínicos',
     description: 'Documentação diagnóstica, fotos e escaneamentos 3D',
     permissions: [
-      { key: 'FILE_READ', label: 'Visualizar / Baixar', description: 'Abrir e descarregar exames, fotos e modelos 3D' },
+      { key: 'FILE_READ', label: 'Visualizar Exames', description: 'Abrir pré-visualizações de fotos, radiografias e malhas 3D' },
       { key: 'FILE_UPLOAD', label: 'Enviar Arquivos', description: 'Fazer upload de exames nos 13 slots clínicos' },
-      { key: 'FILE_DELETE', label: 'Excluir Arquivos', description: 'Remover exames e documentos anexados' },
+      { key: 'FILE_DOWNLOAD', label: 'Baixar Arquivos', description: 'Descarregar arquivos originais do prontuário' },
+      { key: 'FILE_DELETE', label: 'Excluir Arquivos', description: 'Remover ou substituir exames anexados em rascunho' },
     ],
   },
   {
@@ -277,178 +375,150 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     name: 'Planejamento 3D',
     description: 'Visualização, revisão e aprovação de Setups Virtuais 3D',
     permissions: [
-      { key: 'SETUP_READ', label: 'Visualizar Setups 3D', description: 'Interagir no visualizador 3D Three.js e timeline de estágios' },
-      { key: 'SETUP_CREATE', label: 'Criar Setups 3D', description: 'Inserir novos modelos CAD 3D no laboratório' },
-      { key: 'SETUP_UPDATE', label: 'Revisar / Solicitar Ajustes', description: 'Solicitar alterações técnicas no planejamento' },
-      { key: 'SETUP_APPROVE', label: 'Aprovação Clínica', description: 'Assinar aprovação formal para fabricação (exige CRO ativo)' },
+      { key: 'SETUP_READ', label: 'Visualizar Planejamento 3D', description: 'Interagir no visualizador 3D Three.js e timeline de estágios' },
+      { key: 'SETUP_CREATE', label: 'Criar Setups 3D (Lab)', description: 'Inserir novos modelos CAD 3D no laboratório' },
+      { key: 'SETUP_PUBLISH', label: 'Publicar Setups 3D (Lab)', description: 'Disponibilizar versão do setup para revisão clínica' },
+      { key: 'SETUP_UPDATE', label: 'Revisar Planejamento', description: 'Atualizar anotações ou parâmetros de revisão' },
+      { key: 'SETUP_REVISION_REQUEST', label: 'Solicitar Ajustes Técnicos', description: 'Pedir revisão biomecânica ao planejador CAD' },
+      { key: 'SETUP_REJECT', label: 'Rejeitar Setup', description: 'Devolver setup com justificativa clínica fundamentada' },
+      { key: 'SETUP_APPROVE', label: 'Aprovar Setup', description: 'Assinar aprovação formal para fabricação (exige CRO ativo)' },
     ],
   },
   {
-    id: 'PRODUCTION',
-    name: 'Produção Fabril',
-    description: 'Esteira de manufatura aditiva, termoformagem e corte',
+    id: 'REFINEMENTS',
+    name: 'Refinamentos',
+    description: 'Solicitação e aprovação de alinhadores adicionais',
     permissions: [
-      { key: 'PRODUCTION_READ', label: 'Visualizar Esteira', description: 'Ver status dos lotes e fases de fabricação' },
-      { key: 'PRODUCTION_UPDATE', label: 'Atualizar Etapas', description: 'Avançar status das etapas de manufatura' },
-    ],
-  },
-  {
-    id: 'QUALITY_CONTROL',
-    name: 'Controle de Qualidade (QC)',
-    description: 'Inspeção dimensional e liberação de alinhadores',
-    permissions: [
-      { key: 'QC_READ', label: 'Visualizar Inspeções', description: 'Acessar relatórios de conformidade e testes de tolerância' },
-      { key: 'QC_EXECUTE', label: 'Liberar / Reprovar QC', description: 'Dar parecer técnico de inspeção dimensional' },
-    ],
-  },
-  {
-    id: 'SHIPMENT',
-    name: 'Expedição e Logística',
-    description: 'Montagem de kits, remessas e rastreio de entrega',
-    permissions: [
-      { key: 'SHIPMENT_READ', label: 'Visualizar Envios', description: 'Acompanhar códigos de rastreio e datas estimadas' },
-      { key: 'SHIPMENT_DISPATCH', label: 'Despachar Pacotes', description: 'Registrar remessa de envio para a transportadora' },
+      { key: 'REFINEMENT_REQUEST', label: 'Solicitar Refinamento', description: 'Abrir pedido de refinamento vinculado ao caso' },
+      { key: 'REFINEMENT_CLINICAL_APPROVE', label: 'Aprovar Clínico de Refinamento', description: 'Homologar indicação clínica do refinamento (exige CRO)' },
+      { key: 'REFINEMENT_COMMERCIAL_APPROVE', label: 'Aprovar Comercial de Refinamento', description: 'Autorizar cobertura contratual ou cobrança excedente' },
     ],
   },
   {
     id: 'TEAM',
     name: 'Equipe e Acessos',
-    description: 'Gestão de membros e prerrogativas na organização',
+    description: 'Gestão de membros, convites e prerrogativas na organização',
     permissions: [
-      { key: 'TEAM_READ', label: 'Visualizar Equipe', description: 'Ver lista de profissionais e assistentes da clínica' },
-      { key: 'TEAM_INVITE', label: 'Convidar Membros', description: 'Enviar convites personalizados para novos membros' },
-      { key: 'TEAM_MANAGE', label: 'Gerenciar Permissões', description: 'Editar permissões e suspender/reativar acessos' },
+      { key: 'TEAM_READ', label: 'Visualizar Equipe', description: 'Ver lista de profissionais, assistentes e convites' },
+      { key: 'TEAM_INVITE', label: 'Convidar Membros', description: 'Enviar convites com permissões personalizadas' },
+      { key: 'TEAM_MANAGE', label: 'Gerenciar Permissões e Status', description: 'Editar permissões granulares e suspender/reativar acessos' },
     ],
   },
   {
-    id: 'AUDIT',
-    name: 'Auditoria e LGPD',
-    description: 'Trilha de auditoria e governança regulatória',
+    id: 'PRODUCTION',
+    name: 'Produção Fabril',
+    description: 'Esteira de manufatura aditiva, lotes e cronograma fabril',
     permissions: [
-      { key: 'AUDIT_READ', label: 'Visualizar Auditoria', description: 'Consultar logs de acesso e ações regulatórias' },
+      { key: 'PRODUCTION_READ', label: 'Visualizar Esteira Fabril', description: 'Acessar painel Kanban do laboratório FyAlign' },
+      { key: 'PRODUCTION_UPDATE', label: 'Atualizar Etapas Fabris', description: 'Avançar fases de impressão 3D, termoformagem e corte' },
+      { key: 'PRODUCTION_UNIT_READ', label: 'Visualizar Lotes de Produção', description: 'Acompanhar progresso dos lotes contratados' },
+      { key: 'PRODUCTION_UNIT_MANAGE', label: 'Gerenciar Lotes de Produção', description: 'Criar e organizar unidades/lotes na manufatura' },
+      { key: 'SCHEDULE_UPDATE', label: 'Ajustar Cronograma Fabril', description: 'Reprogramar datas previstas de entrega de lotes' },
+    ],
+  },
+  {
+    id: 'QUALITY_CONTROL',
+    name: 'Controle de Qualidade (QC)',
+    description: 'Inspeção dimensional e liberação técnica de alinhadores',
+    permissions: [
+      { key: 'QC_READ', label: 'Visualizar Inspeções QC', description: 'Acessar checklists de conformidade e tolerância óptica' },
+      { key: 'QC_EXECUTE', label: 'Executar Checklist QC', description: 'Registrar inspeção fabril do caso' },
+      { key: 'PRODUCTION_QC_RELEASE', label: 'Homologar / Reprovar Lotes QC', description: 'Liberar ou reprovar unidades de produção para expedição' },
+    ],
+  },
+  {
+    id: 'SHIPMENT',
+    name: 'Expedição e Logística',
+    description: 'Montagem de remessas, código de rastreio e entrega',
+    permissions: [
+      { key: 'SHIPMENT_READ', label: 'Visualizar Envios e Rastreio', description: 'Acompanhar remessas e códigos de rastreamento' },
+      { key: 'SHIPMENT_CREATE', label: 'Criar Remessas', description: 'Montar remessas parciais ou totais de lotes aprovados' },
+      { key: 'SHIPMENT_DISPATCH', label: 'Despachar Remessas', description: 'Registrar postagem na transportadora' },
+      { key: 'DISPATCH_MANAGE', label: 'Gerenciar Expedição', description: 'Administrar fila logística de despacho' },
+      { key: 'SHIPMENT_DELIVERY_CONFIRM', label: 'Confirmar Entrega', description: 'Baixar recebimento físico da remessa na clínica' },
     ],
   },
   {
     id: 'FINANCE',
-    name: 'Financeiro e Cobrança',
-    description: 'Faturas, pedidos comerciais e faturamento',
+    name: 'Financeiro e Contratos',
+    description: 'Contratos comerciais, ordens de produção e faturamento B2B',
     permissions: [
-      { key: 'ORDER_READ', label: 'Visualizar Pedidos', description: 'Consultar ordens de compra e status financeiro' },
-      { key: 'BILLING_READ', label: 'Visualizar Faturas', description: 'Consultar extrato de cobrança e boletos' },
-      { key: 'BILLING_MANAGE', label: 'Gerenciar Faturamento', description: 'Emitir cobranças e confirmar contratos comerciais' },
+      { key: 'CONTRACT_READ', label: 'Visualizar Contratos', description: 'Consultar termos, franquias e versões do contrato do caso' },
+      { key: 'CONTRACT_CREATE', label: 'Criar Proposta Contratual', description: 'Emitir contrato comercial inicial em centavos' },
+      { key: 'CONTRACT_CONFIRM', label: 'Confirmar Contrato Comercial', description: 'Homologar contrato para liberar gatilho comercial de produção' },
+      { key: 'CONTRACT_AMEND', label: 'Emitir Aditivos Contratuais', description: 'Versionar alterações de pares ou valores acordados' },
+      { key: 'ORDER_READ', label: 'Visualizar Pedidos (OP)', description: 'Consultar ordens de compra e status financeiro' },
+      { key: 'ORDER_CREATE', label: 'Emitir Pedidos', description: 'Gerar ordens vinculadas aos casos aprovados' },
+      { key: 'BILLING_READ', label: 'Visualizar Faturas', description: 'Consultar extrato de cobrança e boletos da organização' },
+      { key: 'BILLING_MANAGE', label: 'Gerenciar Faturamento Global', description: 'Emitir cobranças, liquidar faturas e gerir recebíveis' },
+    ],
+  },
+  {
+    id: 'ADMINISTRATION',
+    name: 'Administração e Auditoria',
+    description: 'Governança global da plataforma, fila CRO e trilha LGPD',
+    permissions: [
+      { key: 'ORG_UPDATE', label: 'Editar Dados da Organização', description: 'Atualizar cadastro e endereços da clínica ativa' },
+      { key: 'ORG_MANAGE_ALL', label: 'Gerenciar Todas as Organizações', description: 'Credenciar, suspender ou auditar clínicas no ecossistema' },
+      { key: 'AUDIT_READ', label: 'Visualizar Auditoria LGPD', description: 'Consultar trilha imutável de acessos e ações sensíveis' },
+      { key: 'AUDIT_EXPORT', label: 'Exportar Logs de Auditoria', description: 'Extrair relatórios regulatórios de conformidade' },
+      { key: 'SYSTEM_ADMIN', label: 'Super Administração & Fila CRO', description: 'Controle master da plataforma e homologação regulatória de CRO' },
     ],
   },
 ];
 
 // ============================================================================
-// 5.2 TETOS DE ACESSO POR CARGO (ROLE CEILINGS)
-// Define o conjunto MÁXIMO absoluto de permissões que cada papel pode receber.
-// O administrador NUNCA pode conceder permissões fora desse teto.
+// 7. TETOS DE ACESSO POR CARGO (ROLE_CEILINGS)
+// Derivado de forma determinística e bijetiva a partir de PERMISSIONS para que
+// NENHUMA permissão jamais fique órfã ou dessincronizada entre API e governança.
 // ============================================================================
-export const ROLE_CEILINGS: Record<UserRole, Permission[]> = {
-  SUPER_ADMIN: Object.keys(PERMISSIONS) as Permission[],
+function buildRoleCeilings(): Record<UserRole, Permission[]> {
+  const ceilings = {} as Record<UserRole, Permission[]>;
+  for (const role of ALL_ROLES) {
+    ceilings[role] = [];
+  }
 
-  CLINIC_ADMIN: [
-    'PATIENT_READ', 'PATIENT_CREATE', 'PATIENT_UPDATE',
-    'CASE_READ', 'CASE_CREATE', 'CASE_UPDATE', 'CASE_DELETE', 'SUBMIT_CASE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD', 'FILE_DELETE',
-    'SETUP_READ', 'SETUP_UPDATE',
-    'ORDER_READ', 'ORDER_CREATE',
-    'TEAM_READ', 'TEAM_INVITE', 'TEAM_MANAGE',
-    'BILLING_READ',
-    // Aliases compatíveis
-    'CREATE_PATIENT', 'CREATE_CASE_DRAFT', 'UPLOAD_FILES', 'DELETE_FILES',
-    'VIEW_SETUP_3D', 'MANAGE_CLINIC_TEAM', 'VIEW_BILLING',
-  ],
+  const allPermissionKeys = Object.keys(PERMISSIONS) as Permission[];
+  for (const perm of allPermissionKeys) {
+    const allowedRoles = PERMISSIONS[perm] as readonly UserRole[];
+    for (const role of allowedRoles) {
+      ceilings[role].push(perm);
+    }
+  }
 
-  DOCTOR: [
-    'PATIENT_READ', 'PATIENT_CREATE', 'PATIENT_UPDATE',
-    'CASE_READ', 'CASE_CREATE', 'CASE_UPDATE', 'SUBMIT_CASE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD', 'FILE_DELETE',
-    'SETUP_READ', 'SETUP_UPDATE', 'SETUP_APPROVE', 'SETUP_REJECT', 'SETUP_REVISION_REQUEST',
-    'ORDER_READ',
-    // Aliases compatíveis
-    'CREATE_PATIENT', 'CREATE_CASE_DRAFT', 'SIGN_PRESCRIPTION',
-    'UPLOAD_FILES', 'DELETE_FILES', 'VIEW_SETUP_3D', 'APPROVE_SETUP_3D', 'REQUEST_SETUP_ADJUSTMENT',
-  ],
+  return ceilings;
+}
 
-  CLINIC_ASSISTANT: [
-    'PATIENT_READ', 'PATIENT_CREATE', 'PATIENT_UPDATE',
-    'CASE_READ', 'CASE_CREATE', 'CASE_UPDATE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD',
-    'SETUP_READ',
-    'ORDER_READ',
-    // Aliases compatíveis
-    'CREATE_PATIENT', 'CREATE_CASE_DRAFT', 'UPLOAD_FILES', 'VIEW_SETUP_3D',
-  ],
-
-  PLANNER_3D: [
-    'CASE_READ', 'CASE_UPDATE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD',
-    'SETUP_READ', 'SETUP_CREATE', 'SETUP_UPDATE', 'SETUP_PUBLISH',
-    'PRODUCTION_READ',
-    // Aliases compatíveis
-    'VIEW_SETUP_3D', 'PUBLISH_SETUP_3D', 'TRIAGE_CASE',
-  ],
-
-  PRODUCTION_QC: [
-    'CASE_READ',
-    'FILE_READ', 'FILE_DOWNLOAD',
-    'SETUP_READ',
-    'PRODUCTION_READ', 'PRODUCTION_UPDATE',
-    'QC_READ', 'QC_EXECUTE',
-    'DISPATCH_MANAGE', 'SHIPMENT_READ', 'SHIPMENT_CREATE', 'SHIPMENT_DISPATCH', 'SHIPMENT_DELIVERY_CONFIRM',
-    'ORDER_READ',
-    // Aliases compatíveis
-    'VIEW_SETUP_3D', 'UPDATE_PRODUCTION_STATUS', 'DISPATCH_CASE',
-  ],
-
-  FINANCE: [
-    'ORDER_READ',
-    'BILLING_READ', 'BILLING_MANAGE',
-    'CONTRACT_READ', 'CONTRACT_CREATE', 'CONTRACT_CONFIRM', 'CONTRACT_AMEND',
-    // Aliases compatíveis
-    'VIEW_BILLING',
-  ],
-
-  SUPPORT: [
-    'PATIENT_READ', 'CASE_READ', 'SETUP_READ', 'PRODUCTION_READ', 'ORDER_READ',
-    // Aliases compatíveis
-    'VIEW_SETUP_3D',
-  ],
-};
+export const ROLE_CEILINGS: Record<UserRole, Permission[]> = buildRoleCeilings();
 
 // ============================================================================
-// 5.3 PERMISSÕES PADRÃO POR CARGO (ROLE DEFAULTS)
-// Sugestão inicial pré-marcada ao criar um novo convite para a função.
+// 8. PERMISSÕES PADRÃO POR CARGO (ROLE_DEFAULT_PERMISSIONS)
+// Subconjunto seguro de ROLE_CEILINGS pré-marcado em novos convites e usado
+// como fallback exclusivo para vínculos legados sem linhas em MembershipPermission.
 // ============================================================================
+const CLINIC_ASSISTANT_OPTIONAL_CEILING_PERMS: readonly Permission[] = [
+  'PATIENT_UPDATE',
+  'CASE_UPDATE',
+  'TRIAGE_CASE',
+  'SHIPMENT_READ',
+  'ORDER_READ',
+];
+
 export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
-  SUPER_ADMIN: ROLE_CEILINGS.SUPER_ADMIN,
-  CLINIC_ADMIN: ROLE_CEILINGS.CLINIC_ADMIN,
-  DOCTOR: [
-    'PATIENT_READ', 'PATIENT_CREATE', 'PATIENT_UPDATE',
-    'CASE_READ', 'CASE_CREATE', 'CASE_UPDATE', 'SUBMIT_CASE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD', 'FILE_DELETE',
-    'SETUP_READ', 'SETUP_UPDATE', 'SETUP_APPROVE',
-    'ORDER_READ',
-    'CREATE_PATIENT', 'CREATE_CASE_DRAFT', 'SIGN_PRESCRIPTION',
-    'UPLOAD_FILES', 'DELETE_FILES', 'VIEW_SETUP_3D', 'APPROVE_SETUP_3D',
-  ],
-  CLINIC_ASSISTANT: [
-    'PATIENT_READ', 'PATIENT_CREATE',
-    'CASE_READ', 'CASE_CREATE',
-    'FILE_READ', 'FILE_UPLOAD', 'FILE_DOWNLOAD',
-    'SETUP_READ',
-    'CREATE_PATIENT', 'CREATE_CASE_DRAFT', 'UPLOAD_FILES', 'VIEW_SETUP_3D',
-  ],
-  PLANNER_3D: ROLE_CEILINGS.PLANNER_3D,
-  PRODUCTION_QC: ROLE_CEILINGS.PRODUCTION_QC,
-  FINANCE: ROLE_CEILINGS.FINANCE,
-  SUPPORT: ROLE_CEILINGS.SUPPORT,
+  SUPER_ADMIN: [...ROLE_CEILINGS.SUPER_ADMIN],
+  CLINIC_ADMIN: [...ROLE_CEILINGS.CLINIC_ADMIN],
+  DOCTOR: [...ROLE_CEILINGS.DOCTOR],
+  CLINIC_ASSISTANT: ROLE_CEILINGS.CLINIC_ASSISTANT.filter(
+    (perm) => !CLINIC_ASSISTANT_OPTIONAL_CEILING_PERMS.includes(perm)
+  ),
+  PLANNER_3D: [...ROLE_CEILINGS.PLANNER_3D],
+  PRODUCTION_QC: [...ROLE_CEILINGS.PRODUCTION_QC],
+  FINANCE: [...ROLE_CEILINGS.FINANCE],
+  SUPPORT: [...ROLE_CEILINGS.SUPPORT],
 };
 
 // ============================================================================
-// 6. FUNÇÕES DE CHECAGEM PURAS (RBAC + MEMBERSHIP PERMISSIONS)
+// 9. FUNÇÕES DE CHECAGEM PURAS (RBAC + MEMBERSHIP PERMISSIONS)
 // ============================================================================
 
 /**
@@ -461,7 +531,7 @@ export function isPermissionWithinCeiling(role: string, permission: Permission):
 
 /**
  * Valida uma lista inteira de permissões contra o teto de um cargo.
- * Garante que nenhuma permissão fora do teto seja concedida.
+ * Garante que nenhuma permissão fora do teto seja concedida (MembershipPermission <= ROLE_CEILINGS).
  */
 export function validatePermissionsAgainstCeiling(
   role: string,
@@ -476,9 +546,11 @@ export function validatePermissionsAgainstCeiling(
 }
 
 /**
- * Retorna as permissões efetivas de um vínculo (Membership).
- * Se o vínculo possuir registros em MembershipPermission, respeita o teto do papel.
- * Se estiver vazio (registros legados), aplica o fallback padrão seguro do cargo.
+ * Calcula as permissões efetivas de um vínculo (Membership):
+ *   effectivePermissions = ROLE_CEILINGS[role] ∩ MembershipPermission
+ *
+ * Para registros legados sem linhas em MembershipPermission, aplica:
+ *   ROLE_CEILINGS[role] ∩ ROLE_DEFAULT_PERMISSIONS[role]
  */
 export function getEffectivePermissions(membership: {
   role: string;
@@ -486,6 +558,9 @@ export function getEffectivePermissions(membership: {
 }): Permission[] {
   const role = membership.role as UserRole;
   const ceiling = ROLE_CEILINGS[role] || [];
+  if (ceiling.length === 0) return [];
+
+  const ceilingSet = new Set<string>(ceiling);
 
   if (Array.isArray(membership.permissions) && membership.permissions.length > 0) {
     const rawList =
@@ -493,47 +568,92 @@ export function getEffectivePermissions(membership: {
         ? (membership.permissions as string[])
         : (membership.permissions as { permission: string }[]).map((p) => p.permission);
 
-    // Filtra estritamente pelo teto do cargo
-    return rawList.filter((p) => ceiling.includes(p as Permission)) as Permission[];
+    // Interseção estrita: ROLE_CEILINGS[role] ∩ MembershipPermission (sem duplicatas)
+    const uniqueGranted = Array.from(new Set(rawList));
+    return uniqueGranted.filter((p) => ceilingSet.has(p)) as Permission[];
   }
 
-  // Fallback seguro para defaults do papel
-  return ROLE_DEFAULT_PERMISSIONS[role] || [];
+  // Fallback seguro apenas para vínculos legados sem customização persistida
+  const defaults = ROLE_DEFAULT_PERMISSIONS[role] || [];
+  return defaults.filter((p) => ceilingSet.has(p));
 }
 
 /**
- * Verifica se um papel ou contexto de usuário possui uma permissão específica.
- * Suporta assinatura por string (role legada) e por objeto de contexto ({ role, permissions }).
+ * Verifica se um papel (modo legado) ou contexto de vínculo ({ role, permissions })
+ * possui uma permissão específica, respeitando o teto inegociável da função.
  */
 export function hasPermission(
   roleOrContext: string | { role: string; permissions?: string[] },
   permission: Permission
 ): boolean {
   if (typeof roleOrContext === 'string') {
-    const allowedRoles = PERMISSIONS[permission] as readonly string[] | undefined;
-    return Boolean(allowedRoles?.includes(roleOrContext));
+    const ceiling = ROLE_CEILINGS[roleOrContext as UserRole] || [];
+    if (!ceiling.includes(permission)) return false;
+    const defaults = ROLE_DEFAULT_PERMISSIONS[roleOrContext as UserRole] || [];
+    return defaults.includes(permission);
   }
 
   const { role, permissions } = roleOrContext;
   const ceiling = ROLE_CEILINGS[role as UserRole] || [];
 
-  // Se a permissão sequer existe no teto do cargo, é bloqueada instantaneamente
+  // 1. Teto inegociável: se não está em ROLE_CEILINGS[role], bloqueia imediatamente
   if (!ceiling.includes(permission)) {
     return false;
   }
 
-  // Se o contexto possui permissões explícitas da Membership
-  if (Array.isArray(permissions) && permissions.length > 0) {
-    return permissions.includes(permission);
+  // 2. Se o contexto trouxe array explícito de permissões efetivas
+  if (Array.isArray(permissions)) {
+    if (permissions.includes(permission)) {
+      return true;
+    }
+    // Compatibilidade com aliases legados caso MembershipPermission armazene apenas chaves canônicas
+    const canonicalEquivalent =
+      LEGACY_PERMISSION_ALIASES[permission as LegacyPermissionAlias];
+    if (canonicalEquivalent && permissions.includes(canonicalEquivalent)) {
+      return true;
+    }
+    return false;
   }
 
-  // Fallback seguro: se não tiver permissões explícitas na membership, usa os defaults do cargo
+  // 3. Fallback quando permissions não foi informado no objeto
   const defaults = ROLE_DEFAULT_PERMISSIONS[role as UserRole] || [];
   return defaults.includes(permission);
 }
 
 /**
- * Retorna a lista completa de permissões de um determinado papel.
+ * Helper oficial do Frontend: decide visibilidade de menus, páginas, botões e ações
+ * exclusivamente com base em `user.permissions` retornado por `GET /api/auth/me`.
+ */
+export function userHasPermission(
+  user: { permissions?: readonly string[] | null } | null | undefined,
+  permission: Permission
+): boolean {
+  if (!user || !Array.isArray(user.permissions)) {
+    return false;
+  }
+  if (user.permissions.includes(permission)) {
+    return true;
+  }
+  const canonicalEquivalent =
+    LEGACY_PERMISSION_ALIASES[permission as LegacyPermissionAlias];
+  if (canonicalEquivalent && user.permissions.includes(canonicalEquivalent)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Verifica se `user.permissions` contém pelo menos uma das permissões informadas.
+ */
+export function userHasAnyPermission(
+  user: { permissions?: readonly string[] | null } | null | undefined,
+  permissions: readonly Permission[]
+): boolean {
+  return permissions.some((perm) => userHasPermission(user, perm));
+}
+
+/**
+ * Retorna a lista padrão de permissões de um determinado papel.
  */
 export function getPermissionsForRole(role: string): Permission[] {
   return ROLE_DEFAULT_PERMISSIONS[role as UserRole] || [];
@@ -541,26 +661,38 @@ export function getPermissionsForRole(role: string): Permission[] {
 
 /**
  * Valida se um membro clínico pode aprovar formalmente um Setup 3D.
- * Exige:
- * 1. Papel com permissão SETUP_APPROVE (ex: DOCTOR ou SUPER_ADMIN)
- * 2. Status do vínculo ativo (ACTIVE)
- * 3. Habilitação profissional validada (croStatus === VERIFIED ou SUPER_ADMIN)
  */
 export function canApproveSetup(membership: {
   role: string;
   status: string;
   croStatus?: string | null;
+  permissions?: { permission: string }[] | string[];
 }): { allowed: boolean; reason?: string } {
+  const effective = getEffectivePermissions(membership);
+
+  if (!effective.includes('SETUP_APPROVE')) {
+    return {
+      allowed: false,
+      reason: 'Este vínculo não possui a permissão SETUP_APPROVE habilitada.',
+    };
+  }
+
   if (membership.role === ROLES.SUPER_ADMIN) {
     return { allowed: true };
   }
 
   if (membership.role !== ROLES.DOCTOR) {
-    return { allowed: false, reason: 'Apenas Cirurgiões-Dentistas (DOCTOR) podem aprovar formalmente o Setup.' };
+    return {
+      allowed: false,
+      reason: 'Apenas Cirurgiões-Dentistas (DOCTOR) podem aprovar formalmente o Setup.',
+    };
   }
 
   if (membership.status !== MEMBERSHIP_STATUS.ACTIVE) {
-    return { allowed: false, reason: 'O vínculo do profissional com a clínica não está ativo.' };
+    return {
+      allowed: false,
+      reason: 'O vínculo do profissional com a clínica não está ativo.',
+    };
   }
 
   if (membership.croStatus !== CRO_STATUS.VERIFIED) {
@@ -615,7 +747,6 @@ export function getAllowedInviteRoles(authorRole: string): UserRole[] {
   }
 
   if (authorRole === ROLES.CLINIC_ADMIN) {
-    // Administrador de clínica só pode convidar para a sua clínica
     return [ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT];
   }
 
@@ -624,13 +755,19 @@ export function getAllowedInviteRoles(authorRole: string): UserRole[] {
 
 /**
  * Verifica se um usuário possui autoridade comercial para confirmar contratos ou aditivos.
- * Exige:
- * 1. Pertencer à organização matriz (FYALIGN)
- * 2. Possuir permissão CONTRACT_CONFIRM (ex: SUPER_ADMIN ou FINANCE)
  */
-export function hasCommercialAuthority(user: { organizationType?: string; role: string }): boolean {
+export function hasCommercialAuthority(user: {
+  organizationType?: string;
+  role: string;
+  permissions?: string[];
+}): boolean {
   if (user.organizationType && user.organizationType !== ORGANIZATION_TYPE.FYALIGN) {
     return false;
   }
-  return hasPermission(user.role, 'CONTRACT_CONFIRM');
+  return hasPermission(
+    Array.isArray(user.permissions)
+      ? { role: user.role, permissions: user.permissions }
+      : user.role,
+    'CONTRACT_CONFIRM'
+  );
 }

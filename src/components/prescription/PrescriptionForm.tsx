@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { OdontogramFDI } from '@/components/prescription/OdontogramFDI';
+import { useAuth } from '@/lib/auth/AuthContext';
 import {
   FileSignature,
   Save,
@@ -18,7 +19,6 @@ import {
 
 interface PrescriptionFormProps {
   initialCase: any;
-  userRole?: string;
   userCro?: string | null;
   userName?: string;
   onSubmitted?: () => void;
@@ -26,12 +26,14 @@ interface PrescriptionFormProps {
 
 export function PrescriptionForm({
   initialCase,
-  userRole = 'DOCTOR',
   userCro = 'CRO-SP 102938',
   userName = 'Dr. Roberto Silva',
   onSubmitted,
 }: PrescriptionFormProps) {
   const router = useRouter();
+  const { can } = useAuth();
+  const canEdit = can('CASE_UPDATE');
+  const canSubmit = can('SUBMIT_CASE');
 
   // Estados da Prescrição Clínica
   const [treatedArches, setTreatedArches] = useState<'UPPER' | 'LOWER' | 'BOTH'>(
@@ -69,10 +71,11 @@ export function PrescriptionForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const isLocked = initialCase.status !== 'DRAFT' && initialCase.status !== 'PENDING_DOCS';
+  const formReadOnly = isLocked || !canEdit;
 
   // Gatilho de Auto-Save com Debounce de 1000ms (F3.14)
   const triggerAutoSave = () => {
-    if (isLocked) return;
+    if (formReadOnly) return;
     setSaveStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
@@ -196,7 +199,7 @@ export function PrescriptionForm({
             <span style={{ fontSize: '0.8rem', color: 'var(--crimson-danger)' }}>Erro ao salvar rascunho</span>
           )}
 
-          {!isLocked && (
+          {!isLocked && canSubmit && (
             <button
               type="button"
               onClick={() => setSubmitModalOpen(true)}
@@ -206,6 +209,13 @@ export function PrescriptionForm({
               <FileSignature size={18} />
               <span>Assinar & Submeter Caso</span>
             </button>
+          )}
+
+          {!isLocked && !canSubmit && (
+            <span className="badge badge-warning" style={{ fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Lock size={13} />
+              Aguardando Assinatura do Cirurgião-Dentista
+            </span>
           )}
 
           {isLocked && (
@@ -231,7 +241,7 @@ export function PrescriptionForm({
             <button
               key={item.value}
               type="button"
-              disabled={isLocked}
+              disabled={formReadOnly}
               onClick={() => handleFieldChange(setTreatedArches, item.value)}
               style={{
                 padding: '16px',
@@ -239,7 +249,7 @@ export function PrescriptionForm({
                 border: treatedArches === item.value ? '2px solid var(--cyan-primary)' : '1px solid var(--border-subtle)',
                 background: treatedArches === item.value ? 'var(--badge-setup-bg)' : 'var(--btn-ghost-bg)',
                 textAlign: 'left',
-                cursor: isLocked ? 'default' : 'pointer',
+                cursor: formReadOnly ? 'default' : 'pointer',
                 transition: 'all 0.15s ease'
               }}
             >
@@ -262,7 +272,7 @@ export function PrescriptionForm({
         </p>
 
         {/* Chips de Seleção Rápida */}
-        {!isLocked && (
+        {!formReadOnly && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
             {quickComplaints.map((c) => (
               <button
@@ -289,7 +299,7 @@ export function PrescriptionForm({
         <textarea
           className="form-input"
           rows={3}
-          disabled={isLocked}
+          disabled={formReadOnly}
           value={chiefComplaint}
           onChange={(e) => handleFieldChange(setChiefComplaint, e.target.value)}
           placeholder="Descreva as queixas e expectativas específicas do paciente..."
@@ -309,7 +319,7 @@ export function PrescriptionForm({
             </label>
             <select
               className="form-input"
-              disabled={isLocked}
+              disabled={formReadOnly}
               value={angleClass}
               onChange={(e) => handleFieldChange(setAngleClass, e.target.value)}
             >
@@ -326,7 +336,7 @@ export function PrescriptionForm({
             </label>
             <select
               className="form-input"
-              disabled={isLocked}
+              disabled={formReadOnly}
               value={midlinePreference}
               onChange={(e) => handleFieldChange(setMidlinePreference, e.target.value)}
             >
@@ -344,7 +354,7 @@ export function PrescriptionForm({
         <OdontogramFDI
           restrictedTeeth={restrictedTeeth}
           extractedTeeth={extractedTeeth}
-          readOnly={isLocked}
+          readOnly={formReadOnly}
           onChange={(restr, extr) => {
             setRestrictedTeeth(restr);
             setExtractedTeeth(extr);
@@ -364,7 +374,7 @@ export function PrescriptionForm({
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                disabled={isLocked}
+                disabled={formReadOnly}
                 checked={iprAllowed}
                 onChange={(e) => handleFieldChange(setIprAllowed, e.target.checked)}
                 style={{ width: '18px', height: '18px', accentColor: 'var(--cyan-primary)' }}
@@ -379,7 +389,7 @@ export function PrescriptionForm({
                 </label>
                 <select
                   className="form-input"
-                  disabled={isLocked}
+                  disabled={formReadOnly}
                   value={iprMaxMm}
                   onChange={(e) => handleFieldChange(setIprMaxMm, parseFloat(e.target.value))}
                 >
@@ -401,7 +411,7 @@ export function PrescriptionForm({
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                disabled={isLocked}
+                disabled={formReadOnly}
                 checked={attachmentAllowed}
                 onChange={(e) => handleFieldChange(setAttachmentAllowed, e.target.checked)}
                 style={{ width: '18px', height: '18px', accentColor: 'var(--cyan-primary)' }}
@@ -413,7 +423,7 @@ export function PrescriptionForm({
               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  disabled={isLocked}
+                  disabled={formReadOnly}
                   checked={avoidAnteriorAttachments}
                   onChange={(e) => handleFieldChange(setAvoidAnteriorAttachments, e.target.checked)}
                   style={{ width: '16px', height: '16px', accentColor: 'var(--cyan-primary)' }}
@@ -433,7 +443,7 @@ export function PrescriptionForm({
         <textarea
           className="form-input"
           rows={3}
-          disabled={isLocked}
+          disabled={formReadOnly}
           value={doctorNotes}
           onChange={(e) => handleFieldChange(setDoctorNotes, e.target.value)}
           placeholder="Ex: Não sobrecorrigir torque dos incisivos; manter distalização limitada a 2mm; paciente possui bruxismo severo..."

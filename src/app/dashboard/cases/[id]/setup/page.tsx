@@ -6,6 +6,7 @@ import { DentalViewer3D } from '@/components/viewer3d/DentalViewer3D';
 import { CaseChatModal } from '@/components/chat/CaseChatModal';
 import { SetupApprovalModal } from '@/components/approval/SetupApprovalModal';
 import { StageUploadModal } from '@/components/setup/StageUploadModal';
+import { useAuth } from '@/lib/auth/AuthContext';
 import {
   ArrowLeft,
   Box,
@@ -23,6 +24,11 @@ export default function CaseSetupViewerPage() {
   const router = useRouter();
   const params = useParams();
   const caseId = params.id as string;
+  const { can, canAny } = useAuth();
+
+  const canPublishSetup = canAny(['SETUP_CREATE', 'SETUP_PUBLISH']);
+  const canRequestRevision = canAny(['SETUP_REJECT', 'SETUP_REVISION_REQUEST']);
+  const canApproveSetupAction = can('SETUP_APPROVE');
 
   const [loading, setLoading] = useState(true);
   const [setupData, setSetupData] = useState<any>(null);
@@ -71,26 +77,30 @@ export default function CaseSetupViewerPage() {
           <button onClick={() => router.push('/dashboard')} className="btn-secondary">
             Voltar ao Dashboard
           </button>
-          <button
-            onClick={() => setStageUploadOpen(true)}
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Upload size={16} />
-            <span>Publicar Setup v1 (Multi-STL)</span>
-          </button>
+          {canPublishSetup && (
+            <button
+              onClick={() => setStageUploadOpen(true)}
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Upload size={16} />
+              <span>Publicar Setup v1 (Multi-STL)</span>
+            </button>
+          )}
         </div>
 
-        <StageUploadModal
-          isOpen={stageUploadOpen}
-          onClose={() => setStageUploadOpen(false)}
-          caseId={caseId}
-          caseCode={setupData?.caseCode || 'Caso'}
-          nextVersion={1}
-          onSuccess={() => {
-            loadSetup();
-          }}
-        />
+        {canPublishSetup && (
+          <StageUploadModal
+            isOpen={stageUploadOpen}
+            onClose={() => setStageUploadOpen(false)}
+            caseId={caseId}
+            caseCode={setupData?.caseCode || 'Caso'}
+            nextVersion={1}
+            onSuccess={() => {
+              loadSetup();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -203,57 +213,63 @@ export default function CaseSetupViewerPage() {
           </button>
 
           {/* Botão de Upload / Publicar Novo Setup (Multi-STL) */}
-          <button
-            id="btn-publish-setup-multi-stl"
-            type="button"
-            onClick={() => setStageUploadOpen(true)}
-            className="btn-secondary"
-            style={{
-              padding: '8px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: 'var(--cyan-primary)',
-              borderColor: 'var(--border-hover)',
-            }}
-          >
-            <Upload size={16} />
-            <span>Publicar Setup (Multi-STL)</span>
-          </button>
+          {canPublishSetup && (
+            <button
+              id="btn-publish-setup-multi-stl"
+              type="button"
+              onClick={() => setStageUploadOpen(true)}
+              className="btn-secondary"
+              style={{
+                padding: '8px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: 'var(--cyan-primary)',
+                borderColor: 'var(--border-hover)',
+              }}
+            >
+              <Upload size={16} />
+              <span>Publicar Setup (Multi-STL)</span>
+            </button>
+          )}
 
           {/* Botões de Decisão Clínica (Aprovar / Rejeitar) */}
           {!isApproved && (
             <>
-              <button
-                onClick={() => setApprovalModalMode('REJECT')}
-                className="btn-secondary"
-                style={{
-                  padding: '8px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  borderColor: 'rgba(239, 68, 68, 0.4)',
-                  color: '#fca5a5',
-                }}
-              >
-                <RotateCcw size={15} />
-                <span>Solicitar Ajustes</span>
-              </button>
+              {canRequestRevision && (
+                <button
+                  onClick={() => setApprovalModalMode('REJECT')}
+                  className="btn-secondary"
+                  style={{
+                    padding: '8px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                  }}
+                >
+                  <RotateCcw size={15} />
+                  <span>Solicitar Ajustes</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setApprovalModalMode('APPROVE')}
-                className="btn-primary"
-                style={{
-                  padding: '8px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'linear-gradient(135deg, #10b981, #059669)',
-                }}
-              >
-                <CheckCircle2 size={16} />
-                <span>Aprovar Setup (RN-02)</span>
-              </button>
+              {canApproveSetupAction && (
+                <button
+                  onClick={() => setApprovalModalMode('APPROVE')}
+                  className="btn-primary"
+                  style={{
+                    padding: '8px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                  }}
+                >
+                  <CheckCircle2 size={16} />
+                  <span>Aprovar Setup (RN-02)</span>
+                </button>
+              )}
             </>
           )}
         </div>

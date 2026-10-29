@@ -3,9 +3,11 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Users, UserPlus, Search, FolderPlus, ArrowLeft, ShieldCheck, Check, X } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 export default function PatientsPage() {
   const router = useRouter();
+  const { can } = useAuth();
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -93,14 +95,16 @@ export default function PatientsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="btn-primary"
-          style={{ padding: '12px 20px' }}
-        >
-          <UserPlus size={18} />
-          <span>+ Cadastrar Paciente</span>
-        </button>
+        {can('PATIENT_CREATE') && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="btn-primary"
+            style={{ padding: '12px 20px' }}
+          >
+            <UserPlus size={18} />
+            <span>+ Cadastrar Paciente</span>
+          </button>
+        )}
       </div>
 
       <div className="glass-panel" style={{ padding: '24px' }}>
@@ -128,9 +132,11 @@ export default function PatientsPage() {
         ) : filteredPatients.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 0' }}>
             <p style={{ color: 'var(--text-muted)', marginBottom: '16px' }}>Nenhum paciente cadastrado.</p>
-            <button onClick={() => setIsModalOpen(true)} className="btn-primary">
-              Cadastrar Primeiro Paciente
-            </button>
+            {can('PATIENT_CREATE') && (
+              <button onClick={() => setIsModalOpen(true)} className="btn-primary">
+                Cadastrar Primeiro Paciente
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -177,14 +183,18 @@ export default function PatientsPage() {
                       )}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        onClick={() => router.push('/dashboard/cases/new')}
-                        className="btn-secondary"
-                        style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                      >
-                        <FolderPlus size={14} />
-                        <span>Novo Caso</span>
-                      </button>
+                      {can('CASE_CREATE') ? (
+                        <button
+                          onClick={() => router.push('/dashboard/cases/new')}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                        >
+                          <FolderPlus size={14} />
+                          <span>Novo Caso</span>
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)' }}>Consulta</span>
+                      )}
                     </td>
                   </tr>
                 ))}

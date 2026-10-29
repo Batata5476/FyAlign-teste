@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
 import { signAccessToken, signRefreshToken, TokenPayload } from '@/lib/auth/jwt';
+import { getEffectivePermissions } from '@/lib/auth/rbac';
 
 const switchSchema = z.object({
   membershipId: z.string().min(1, 'membershipId é obrigatório'),
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
       where: { id: membershipId },
       include: {
         organization: true,
+        permissions: true,
       },
     });
 
@@ -131,6 +133,7 @@ export async function POST(req: NextRequest) {
         id: targetMembership.id,
         role: targetMembership.role,
         croStatus: targetMembership.croStatus,
+        permissions: getEffectivePermissions(targetMembership as any),
         organization: {
           id: targetMembership.organization.id,
           tradeName: targetMembership.organization.tradeName,

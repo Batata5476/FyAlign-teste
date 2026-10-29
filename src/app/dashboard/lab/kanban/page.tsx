@@ -18,6 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { CaseChatModal } from '@/components/chat/CaseChatModal';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface KanbanCase {
   id: string;
@@ -48,6 +49,13 @@ const COLUMNS_CONFIG = [
 
 export default function LabKanbanPage() {
   const router = useRouter();
+  const { can, canAny } = useAuth();
+  const canViewSetup = can('SETUP_READ');
+  const canExecuteQc = canAny(['QC_EXECUTE', 'PRODUCTION_QC_RELEASE']);
+  const canDispatch = canAny(['SHIPMENT_DISPATCH', 'DISPATCH_MANAGE']);
+  const canStartCad = canAny(['CASE_UPDATE', 'PRODUCTION_UPDATE', 'TRIAGE_CASE']);
+  const canMoveProduction = can('PRODUCTION_UPDATE');
+
   const [columns, setColumns] = useState<Record<string, KanbanCase[]>>({});
   const [totalCases, setTotalCases] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -333,7 +341,7 @@ export default function LabKanbanPage() {
 
                       {/* Ações do Card */}
                       <div className="card-actions-row">
-                        {c.activeSetup && (
+                        {c.activeSetup && canViewSetup && (
                           <button
                             title="Visualizar Setup 3D"
                             className="btn-card-action"
@@ -352,7 +360,7 @@ export default function LabKanbanPage() {
                         </button>
 
                         {/* Ações por fase */}
-                        {col.key === 'IN_PRODUCTION' && (
+                        {col.key === 'IN_PRODUCTION' && canExecuteQc && (
                           <button
                             title="Inspecionar Controle de Qualidade (QC)"
                             className="btn-card-action-highlight"
@@ -362,7 +370,7 @@ export default function LabKanbanPage() {
                           </button>
                         )}
 
-                        {col.key === 'QUALITY_CONTROL' && (
+                        {col.key === 'QUALITY_CONTROL' && canDispatch && (
                           <button
                             title="Despachar com Rastreamento"
                             className="btn-card-action-highlight"
@@ -373,7 +381,7 @@ export default function LabKanbanPage() {
                         )}
 
                         {/* Avançar status rápido */}
-                        {col.key === 'SUBMITTED' && (
+                        {col.key === 'SUBMITTED' && canStartCad && (
                           <button
                             className="btn-card-action-next"
                             onClick={() => handleMoveStatus(c.id, 'CAD_DESIGN')}
@@ -381,7 +389,7 @@ export default function LabKanbanPage() {
                             Iniciar CAD →
                           </button>
                         )}
-                        {col.key === 'APPROVED' && (
+                        {col.key === 'APPROVED' && canMoveProduction && (
                           <button
                             className="btn-card-action-next"
                             onClick={() => handleMoveStatus(c.id, 'IN_PRODUCTION')}

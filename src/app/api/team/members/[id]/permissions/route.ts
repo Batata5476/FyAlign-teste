@@ -12,7 +12,9 @@ import {
 const db = prisma as any;
 
 const updatePermissionsSchema = z.object({
-  permissions: z.array(z.string()),
+  permissions: z
+    .array(z.string())
+    .min(1, 'Selecione pelo menos uma permissão de acesso (para bloquear tudo, suspenda o vínculo).'),
 });
 
 /**

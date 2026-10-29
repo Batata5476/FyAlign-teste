@@ -15,15 +15,22 @@ import {
   ShieldCheck,
   Check
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user, can } = useAuth();
+  const canReadCases = can('CASE_READ');
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     async function loadCases() {
+      if (!canReadCases) {
+        setLoading(false);
+        return;
+      }
       try {
         const res = await fetch('/api/cases');
         if (res.ok) {
@@ -37,7 +44,7 @@ export default function DashboardPage() {
       }
     }
     loadCases();
-  }, []);
+  }, [canReadCases]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -135,13 +142,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => router.push('/dashboard/audit')}
-          className="btn-secondary"
-          style={{ fontSize: '0.82rem', padding: '8px 14px' }}
-        >
-          Ver Checklist de Auditoria
-        </button>
+        {can('AUDIT_READ') && (
+          <button
+            onClick={() => router.push('/dashboard/audit')}
+            className="btn-secondary"
+            style={{ fontSize: '0.82rem', padding: '8px 14px' }}
+          >
+            Ver Checklist de Auditoria
+          </button>
+        )}
       </div>
 
       {/* Header com Boas-Vindas e Ação Principal */}
@@ -155,14 +164,16 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => router.push('/dashboard/cases/new')}
-          className="btn-primary"
-          style={{ padding: '12px 22px' }}
-        >
-          <FolderPlus size={18} />
-          <span>+ Novo Caso Clínico</span>
-        </button>
+        {can('CASE_CREATE') && (
+          <button
+            onClick={() => router.push('/dashboard/cases/new')}
+            className="btn-primary"
+            style={{ padding: '12px 22px' }}
+          >
+            <FolderPlus size={18} />
+            <span>+ Novo Caso Clínico</span>
+          </button>
+        )}
       </div>
 
       {/* Métricas do Dashboard */}
@@ -233,7 +244,9 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Casos em Andamento</h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Lista de pacientes vinculados à Clínica OdontoPrime</p>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Lista de casos vinculados a {user?.organization?.tradeName || 'sua organização'}
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '12px' }}>
@@ -256,19 +269,27 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {loading ? (
+        {!canReadCases ? (
+          <div style={{ textAlign: 'center', padding: '56px 16px' }}>
+            <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Seu vínculo atual ({user?.role}) opera com escopo administrativo/financeiro sem acesso a prontuários clínicos (LGPD).
+            </p>
+          </div>
+        ) : loading ? (
           <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
             Carregando casos clínicos...
           </div>
         ) : filteredCases.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <p style={{ fontSize: '1.1rem', color: 'var(--text-muted)', marginBottom: '16px' }}>Nenhum caso clínico encontrado.</p>
-            <button
-              onClick={() => router.push('/dashboard/cases/new')}
-              className="btn-primary"
-            >
-              Criar Primeiro Caso
-            </button>
+            {can('CASE_CREATE') && (
+              <button
+                onClick={() => router.push('/dashboard/cases/new')}
+                className="btn-primary"
+              >
+                Criar Primeiro Caso
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -321,7 +342,7 @@ export default function DashboardPage() {
                         {new Date(c.createdAt).toLocaleDateString('pt-BR')}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        {c.status === 'SETUP_AVAILABLE' ? (
+                        {c.status === 'SETUP_AVAILABLE' && can('SETUP_READ') ? (
                           <button
                             onClick={() => router.push(`/dashboard/cases/${c.id}/setup`)}
                             className="btn-primary"

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SlotSpecification } from '@/lib/storage/validator';
 import { STLModalViewer } from '@/components/viewer3d/STLModalViewer';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface FileCardProps {
   slot: SlotSpecification & { file: any | null };
@@ -28,6 +29,10 @@ interface FileCardProps {
 
 export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCardProps) {
   const router = useRouter();
+  const { can } = useAuth();
+  const canUpload = can('FILE_UPLOAD');
+  const canDelete = can('FILE_DELETE');
+  const canViewSetup = can('SETUP_READ');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -56,6 +61,7 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!canUpload) return;
     setIsDragging(true);
   };
 
@@ -66,6 +72,7 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (!canUpload) return;
     const file = e.dataTransfer.files?.[0];
     if (file) {
       setSelectedFile(file);
@@ -356,21 +363,23 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
               >
                 <Eye size={16} />
               </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                title="Remover Arquivo"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  padding: '5px',
-                  borderRadius: '4px'
-                }}
-              >
-                <Trash2 size={16} />
-              </button>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  title="Remover Arquivo"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '5px',
+                    borderRadius: '4px'
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -383,7 +392,7 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
             color: 'var(--text-dim)'
           }}>
             <UploadCloud size={16} color="var(--cyan-primary)" />
-            <span>Arraste e solte o arquivo aqui</span>
+            <span>{canUpload ? 'Arraste e solte o arquivo aqui' : 'Envio restrito por permissão'}</span>
           </div>
         )}
 
@@ -406,29 +415,31 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
       </div>
 
       {/* Botões Inferiores do Card: Botão de Inserir e Substituir */}
-      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-        {isUploaded ? (
-          <button
-            type="button"
-            onClick={handleSelectClick}
-            className="btn-secondary"
-            style={{ width: '100%', fontSize: '0.78rem', padding: '7px 10px' }}
-          >
-            <RefreshCw size={13} />
-            <span>Substituir Arquivo</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSelectClick}
-            className="btn-primary"
-            style={{ width: '100%', fontSize: '0.8rem', padding: '9px 12px' }}
-          >
-            <PlusCircle size={15} />
-            <span>Inserir Arquivo</span>
-          </button>
-        )}
-      </div>
+      {canUpload && (
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+          {isUploaded ? (
+            <button
+              type="button"
+              onClick={handleSelectClick}
+              className="btn-secondary"
+              style={{ width: '100%', fontSize: '0.78rem', padding: '7px 10px' }}
+            >
+              <RefreshCw size={13} />
+              <span>Substituir Arquivo</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSelectClick}
+              className="btn-primary"
+              style={{ width: '100%', fontSize: '0.8rem', padding: '9px 12px' }}
+            >
+              <PlusCircle size={15} />
+              <span>Inserir Arquivo</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Modal de Pré-Visualização (F2.12) */}
       {previewOpen && (
@@ -495,7 +506,7 @@ export function FileCard({ slot, caseId, onFileUploaded, onFileDeleted }: FileCa
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '18px', flexWrap: 'wrap', gap: '10px' }}>
-              {is3D ? (
+              {is3D && canViewSetup ? (
                 <button
                   type="button"
                   onClick={() => {

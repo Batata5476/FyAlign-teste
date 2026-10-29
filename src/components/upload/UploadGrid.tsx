@@ -2,6 +2,7 @@
 
 import React, { useRef } from 'react';
 import { FileCard } from '@/components/upload/FileCard';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { Camera, Smile, Eye, Box, FileCheck2, Upload, AlertCircle, Sparkles } from 'lucide-react';
 
 interface UploadGridProps {
@@ -11,6 +12,8 @@ interface UploadGridProps {
 }
 
 export function UploadGrid({ slots, caseId, onRefresh }: UploadGridProps) {
+  const { can } = useAuth();
+  const canUpload = can('FILE_UPLOAD');
   const batchInputRef = useRef<HTMLInputElement>(null);
 
   const extraoralSlots = slots.filter((s) => s.category === 'EXTRAORAL');
@@ -98,24 +101,26 @@ export function UploadGrid({ slots, caseId, onRefresh }: UploadGridProps) {
           </div>
 
           {/* Botão de Upload em Lote Inteligente (F2.21) */}
-          <div>
-            <input
-              ref={batchInputRef}
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={handleBatchFiles}
-            />
-            <button
-              type="button"
-              onClick={() => batchInputRef.current?.click()}
-              className="btn-secondary"
-              style={{ fontSize: '0.84rem', padding: '10px 16px' }}
-            >
-              <Upload size={16} />
-              <span>Importar Arquivos em Lote</span>
-            </button>
-          </div>
+          {canUpload && (
+            <div>
+              <input
+                ref={batchInputRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleBatchFiles}
+              />
+              <button
+                type="button"
+                onClick={() => batchInputRef.current?.click()}
+                className="btn-secondary"
+                style={{ fontSize: '0.84rem', padding: '10px 16px' }}
+              >
+                <Upload size={16} />
+                <span>Importar Arquivos em Lote</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Barra de Progresso Global */}

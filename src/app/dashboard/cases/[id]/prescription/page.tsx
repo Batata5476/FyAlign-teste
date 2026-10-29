@@ -3,33 +3,26 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { PrescriptionForm } from '@/components/prescription/PrescriptionForm';
-import { ArrowLeft, Printer, FileText, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { ArrowLeft, Printer } from 'lucide-react';
 
 export default function CasePrescriptionPage() {
   const router = useRouter();
   const params = useParams();
   const caseId = params.id as string;
+  const { user: currentUser } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [caseData, setCaseData] = useState<any>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [caseRes, userRes] = await Promise.all([
-          fetch(`/api/cases/${caseId}/prescription`),
-          fetch('/api/auth/me'),
-        ]);
+        const caseRes = await fetch(`/api/cases/${caseId}/prescription`);
 
         if (caseRes.ok) {
           const cData = await caseRes.json();
           setCaseData(cData.case);
-        }
-
-        if (userRes.ok) {
-          const uData = await userRes.json();
-          setCurrentUser(uData.user);
         }
       } catch (err) {
         console.error(err);
@@ -101,7 +94,6 @@ export default function CasePrescriptionPage() {
 
       <PrescriptionForm
         initialCase={caseData}
-        userRole={currentUser?.role}
         userCro={currentUser?.professionalIdCro}
         userName={currentUser?.fullName}
         onSubmitted={() => router.push('/dashboard')}

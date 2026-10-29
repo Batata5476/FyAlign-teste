@@ -1,13 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Shield,
   Lock,
   RotateCcw,
   Check,
-  AlertTriangle,
-  Info,
 } from 'lucide-react';
 import { PermissionModule } from '@/lib/auth/rbac';
 
@@ -32,8 +30,43 @@ export function PermissionsMatrixSelector({
   permissionModules,
   disabled = false,
 }: PermissionsMatrixSelectorProps) {
-  const ceiling = roleCeilings[role] || [];
-  const defaults = roleDefaults[role] || [];
+  const ceiling = useMemo(() => roleCeilings[role] || [], [roleCeilings, role]);
+  const defaults = useMemo(() => roleDefaults[role] || [], [roleDefaults, role]);
+
+  const allModuleKeys = useMemo(
+    () => new Set(permissionModules.flatMap((m) => m.permissions.map((p) => p.key as string))),
+    [permissionModules]
+  );
+
+  // Conta apenas permissões canônicas visíveis nos módulos para que o contador X de Y seja exato
+  const visibleCeilingKeys = useMemo(
+    () => ceiling.filter((k) => allModuleKeys.has(k)),
+    [ceiling, allModuleKeys]
+  );
+
+  const activeAllowedCount = useMemo(
+    () =>
+      selectedPermissions.filter(
+        (p) => ceiling.includes(p) && allModuleKeys.has(p)
+      ).length,
+    [selectedPermissions, ceiling, allModuleKeys]
+  );
+
+  const { availableModules, lockedModules } = useMemo(() => {
+    const available: PermissionModule[] = [];
+    const locked: PermissionModule[] = [];
+
+    for (const mod of permissionModules) {
+      const hasAnyInCeiling = mod.permissions.some((p) => ceiling.includes(p.key));
+      if (hasAnyInCeiling) {
+        available.push(mod);
+      } else {
+        locked.push(mod);
+      }
+    }
+
+    return { availableModules: available, lockedModules: locked };
+  }, [permissionModules, ceiling]);
 
   const handleToggle = (permissionKey: string) => {
     if (disabled || !ceiling.includes(permissionKey)) return;
@@ -48,7 +81,7 @@ export function PermissionsMatrixSelector({
   const handleResetToDefaults = (e: React.MouseEvent) => {
     e.preventDefault();
     if (disabled) return;
-    onChange([...defaults]);
+    onChange(defaults.filter((p) => ceiling.includes(p)));
   };
 
   const handleSelectAllInCeiling = (e: React.MouseEvent) => {
@@ -57,7 +90,7 @@ export function PermissionsMatrixSelector({
     onChange([...ceiling]);
   };
 
-  const activeAllowedCount = selectedPermissions.filter((p) => ceiling.includes(p)).length;
+  const displayRoleLabel = roleName || role;
 
   return (
     <div
@@ -82,11 +115,11 @@ export function PermissionsMatrixSelector({
           gap: '10px',
         }}
       >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ flex: 1, minWidth: '240px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <Shield size={16} color="var(--cyan-primary)" />
             <span style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-main)' }}>
-              Permissões Granulares de Acesso
+              Permissões Efetivas no Teto da Função
             </span>
             <span
               style={{
@@ -99,12 +132,11 @@ export function PermissionsMatrixSelector({
                 border: '1px solid rgba(0, 210, 211, 0.25)',
               }}
             >
-              {activeAllowedCount} de {ceiling.length} ativas
+              {activeAllowedCount} de {visibleCeilingKeys.length} concedidas
             </span>
           </div>
-          <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-            O cargo <strong style={{ color: 'var(--text-secondary)' }}>{roleName}</strong> define o teto máximo.
-            Você pode reduzir prerrogativas para personalizar o acesso.
+          <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: 1.4 }}>
+            Você pode restringir o acesso de <strong style={{ color: 'var(--text-secondary)' }}>{displayRoleLabel}</strong> desmarcando itens abaixo, mas não pode conceder permissões bloqueadas pelo teto (<Lock size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />).
           </p>
         </div>
 
@@ -124,7 +156,7 @@ export function PermissionsMatrixSelector({
                 cursor: 'pointer',
               }}
             >
-              Teto Completo ({ceiling.length})
+              Teto Completo ({visibleCeilingKeys.length})
             </button>
             <button
               type="button"
@@ -150,35 +182,36 @@ export function PermissionsMatrixSelector({
         )}
       </div>
 
-      {/* Grid de Módulos */}
+      {/* Área Rolável: Módulos Disponíveis + Módulos Bloqueados pelo Teto */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: '12px',
-          maxHeight: '360px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          maxHeight: '390px',
           overflowY: 'auto',
           paddingRight: '4px',
         }}
       >
-        {permissionModules.map((module) => {
-          // Permissões do módulo que estão no teto
-          const moduleInCeilingCount = module.permissions.filter((p) => ceiling.includes(p.key)).length;
-          const isEntireModuleOutOfCeiling = moduleInCeilingCount === 0;
-
-          return (
+        {/* 1. Módulos Disponíveis dentro do Teto da Role */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '12px',
+          }}
+        >
+          {availableModules.map((module) => (
             <div
               key={module.id}
               style={{
                 background: 'var(--bg-card)',
-                border: `1px solid ${isEntireModuleOutOfCeiling ? 'var(--border-subtle)' : 'var(--border-card)'}`,
+                border: '1px solid var(--border-card)',
                 borderRadius: 'var(--radius-md)',
                 padding: '12px 14px',
-                opacity: isEntireModuleOutOfCeiling ? 0.45 : 1,
                 transition: 'all 0.15s ease',
               }}
             >
-              {/* Título do Módulo */}
               <div
                 style={{
                   display: 'flex',
@@ -194,7 +227,7 @@ export function PermissionsMatrixSelector({
                     style={{
                       fontSize: '0.84rem',
                       fontWeight: 700,
-                      color: isEntireModuleOutOfCeiling ? 'var(--text-muted)' : 'var(--text-main)',
+                      color: 'var(--text-main)',
                       margin: 0,
                     }}
                   >
@@ -204,27 +237,8 @@ export function PermissionsMatrixSelector({
                     {module.description}
                   </span>
                 </div>
-
-                {isEntireModuleOutOfCeiling && (
-                  <span
-                    style={{
-                      fontSize: '0.66rem',
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      background: 'rgba(148, 163, 184, 0.15)',
-                      color: 'var(--text-muted)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                    }}
-                  >
-                    <Lock size={10} /> Fora do teto
-                  </span>
-                )}
               </div>
 
-              {/* Lista de Ações do Módulo */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                 {module.permissions.map((perm) => {
                   const isAllowedByCeiling = ceiling.includes(perm.key);
@@ -240,17 +254,20 @@ export function PermissionsMatrixSelector({
                         gap: '9px',
                         padding: '6px 8px',
                         borderRadius: 'var(--radius-sm)',
-                        background: isChecked ? 'rgba(0, 210, 211, 0.05)' : 'transparent',
+                        background: isChecked
+                          ? 'rgba(0, 210, 211, 0.05)'
+                          : !isAllowedByCeiling
+                          ? 'rgba(148, 163, 184, 0.04)'
+                          : 'transparent',
                         border: isChecked
                           ? '1px solid rgba(0, 210, 211, 0.22)'
                           : '1px solid transparent',
                         cursor: !disabled && isAllowedByCeiling ? 'pointer' : 'not-allowed',
-                        opacity: isAllowedByCeiling ? 1 : 0.4,
+                        opacity: isAllowedByCeiling ? 1 : 0.55,
                         userSelect: 'none',
                         transition: 'all 0.12s ease',
                       }}
                     >
-                      {/* Custom Checkbox */}
                       <div
                         style={{
                           width: '18px',
@@ -276,21 +293,36 @@ export function PermissionsMatrixSelector({
                         {!isAllowedByCeiling && <Lock size={10} color="var(--text-muted)" />}
                       </div>
 
-                      {/* Descrição da Ação */}
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                           <span
                             style={{
                               fontSize: '0.80rem',
                               fontWeight: isChecked ? 600 : 500,
-                              color: isChecked ? 'var(--text-main)' : isAllowedByCeiling ? 'var(--text-secondary)' : 'var(--text-muted)',
+                              color: isChecked
+                                ? 'var(--text-main)'
+                                : isAllowedByCeiling
+                                ? 'var(--text-secondary)'
+                                : 'var(--text-muted)',
                             }}
                           >
                             {perm.label}
                           </span>
                           {!isAllowedByCeiling && (
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>
-                              (Bloqueado)
+                            <span
+                              style={{
+                                fontSize: '0.64rem',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(148, 163, 184, 0.14)',
+                                color: 'var(--text-muted)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                              }}
+                            >
+                              <Lock size={9} /> Teto bloqueado
                             </span>
                           )}
                         </div>
@@ -303,8 +335,87 @@ export function PermissionsMatrixSelector({
                 })}
               </div>
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* 2. Domínios Bloqueados pelo Teto da Função (🔒 Inacessíveis para esta Role) */}
+        {lockedModules.length > 0 && (
+          <div
+            style={{
+              background: 'rgba(148, 163, 184, 0.04)',
+              border: '1px dashed var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+              <Lock size={13} color="var(--text-muted)" />
+              <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Domínios Bloqueados pelo Teto de {displayRoleLabel}
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                gap: '8px',
+              }}
+            >
+              {lockedModules.map((mod) => (
+                <div
+                  key={mod.id}
+                  title={`A função "${displayRoleLabel}" não permite conceder permissões de ${mod.name}.`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-subtle)',
+                    opacity: 0.65,
+                    cursor: 'not-allowed',
+                    userSelect: 'none',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      {mod.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.68rem',
+                        color: 'var(--text-dim)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {mod.description}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '0.66rem',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: 'rgba(148, 163, 184, 0.16)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    <Lock size={10} /> Bloqueado
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

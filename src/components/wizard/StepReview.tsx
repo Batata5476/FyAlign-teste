@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   Building2,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { WizardDraftState, WizardStepNumber } from './types';
 import {
@@ -22,6 +23,7 @@ import {
   OCCLUSION_CLASS,
   TREATMENT_ACTION,
 } from '@/lib/types/clinical';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface StepReviewProps {
   draft: WizardDraftState;
@@ -36,6 +38,9 @@ export function StepReview({
   onSubmitCase,
   onBack,
 }: StepReviewProps) {
+  const { can } = useAuth();
+  const canSubmitCase = can('SUBMIT_CASE');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
@@ -582,6 +587,30 @@ export function StepReview({
         </div>
       </div>
 
+      {/* Aviso quando usuário prepara o rascunho mas não possui SUBMIT_CASE */}
+      {!canSubmitCase && (
+        <div
+          style={{
+            padding: '14px 18px',
+            borderRadius: '10px',
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            color: '#fbbf24',
+            fontSize: '0.86rem',
+            fontWeight: 500,
+          }}
+        >
+          <Lock size={18} style={{ flexShrink: 0 }} />
+          <span>
+            O rascunho clínico está salvo na clínica, mas o envio formal ao laboratório exige a permissão{' '}
+            <strong>Submeter Caso (Assinatura Clínica)</strong> exclusiva do Cirurgião-Dentista habilitado.
+          </span>
+        </div>
+      )}
+
       {/* Erro de Submissão */}
       {submitError && (
         <div
@@ -639,7 +668,7 @@ export function StepReview({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={isSubmitting || !filesReady || !draft.consent.agreed}
+          disabled={isSubmitting || !filesReady || !draft.consent.agreed || !canSubmitCase}
           className="btn-glow"
           style={{
             display: 'inline-flex',
@@ -648,15 +677,15 @@ export function StepReview({
             padding: '14px 32px',
             borderRadius: '8px',
             background:
-              !filesReady || !draft.consent.agreed
+              !filesReady || !draft.consent.agreed || !canSubmitCase
                 ? 'var(--badge-draft-bg)'
                 : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-            color: !filesReady || !draft.consent.agreed ? 'var(--text-muted)' : '#ffffff',
+            color: !filesReady || !draft.consent.agreed || !canSubmitCase ? 'var(--text-muted)' : '#ffffff',
             fontWeight: 800,
             fontSize: '1rem',
             border: 'none',
-            cursor: !filesReady || !draft.consent.agreed || isSubmitting ? 'not-allowed' : 'pointer',
-            boxShadow: filesReady && draft.consent.agreed ? '0 4px 20px rgba(16, 185, 129, 0.4)' : 'none',
+            cursor: !filesReady || !draft.consent.agreed || !canSubmitCase || isSubmitting ? 'not-allowed' : 'pointer',
+            boxShadow: filesReady && draft.consent.agreed && canSubmitCase ? '0 4px 20px rgba(16, 185, 129, 0.4)' : 'none',
             transition: 'all 0.2s ease',
           }}
         >

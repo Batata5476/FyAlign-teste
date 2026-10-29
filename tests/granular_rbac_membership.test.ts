@@ -35,19 +35,27 @@ function createMockRequest(token: string): NextRequest {
   });
 }
 
-async function runGranularRBACTests() {
-  console.log('====================================================');
-  console.log('🧬 INICIANDO TESTES DO NOVO MOTOR GRANULAR DE RBAC');
-  console.log('====================================================');
-
-  // Limpeza de testes anteriores
-  await prisma.$executeRawUnsafe(`DELETE FROM "MembershipPermission"`);
-  await prisma.$executeRawUnsafe(`DELETE FROM "InvitationPermission"`);
+async function cleanupGranularTestData() {
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "MembershipPermission" WHERE "membershipId" IN (SELECT id FROM "Membership" WHERE "userId" IN (SELECT id FROM "User" WHERE email LIKE '%@test-rbac-granular.com'))`
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "InvitationPermission" WHERE "invitationId" IN (SELECT id FROM "Invitation" WHERE email LIKE '%@test-rbac-granular.com')`
+  );
   await prisma.$executeRawUnsafe(`DELETE FROM "Invitation" WHERE email LIKE '%@test-rbac-granular.com'`);
   await prisma.$executeRawUnsafe(`DELETE FROM "Session" WHERE "userId" IN (SELECT id FROM "User" WHERE email LIKE '%@test-rbac-granular.com')`);
   await prisma.$executeRawUnsafe(`DELETE FROM "Membership" WHERE "userId" IN (SELECT id FROM "User" WHERE email LIKE '%@test-rbac-granular.com')`);
   await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE email LIKE '%@test-rbac-granular.com'`);
   await prisma.$executeRawUnsafe(`DELETE FROM "Organization" WHERE "tradeName" = 'Clínica RBAC Granular Teste'`);
+}
+
+async function runGranularRBACTests() {
+  console.log('====================================================');
+  console.log('🧬 INICIANDO TESTES DO NOVO MOTOR GRANULAR DE RBAC');
+  console.log('====================================================');
+
+  // Limpeza isolada de testes anteriores (escopo estrito @test-rbac-granular.com)
+  await cleanupGranularTestData();
 
   // 1. Criar Organização e Usuário Admin
   const org = await prisma.organization.create({
@@ -340,5 +348,6 @@ runGranularRBACTests()
     process.exit(1);
   })
   .finally(async () => {
+    await cleanupGranularTestData();
     await prisma.$disconnect();
   });

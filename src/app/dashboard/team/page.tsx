@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users,
   UserPlus,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { PermissionsMatrixSelector } from '@/components/team/PermissionsMatrixSelector';
 import { PermissionModule } from '@/lib/auth/rbac';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface Member {
   id: string;
@@ -61,6 +62,7 @@ const ROLE_LABELS: Record<string, string> = {
   PLANNER_3D: 'Planejador CAD 3D',
   PRODUCTION_QC: 'Controle de Qualidade',
   FINANCE: 'Financeiro',
+  SUPPORT: 'Suporte Técnico',
   SUPER_ADMIN: 'Administrador Geral',
 };
 
@@ -71,12 +73,27 @@ const UF_LIST = [
 ];
 
 export default function TeamManagementPage() {
+  const { can, refreshUser } = useAuth();
+  const canInviteTeam = can('TEAM_INVITE');
+  const canManageTeam = can('TEAM_MANAGE');
+
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [allowedRoles, setAllowedRoles] = useState<string[]>([]);
   const [roleCeilings, setRoleCeilings] = useState<Record<string, string[]>>({});
   const [roleDefaults, setRoleDefaults] = useState<Record<string, string[]>>({});
   const [permissionModules, setPermissionModules] = useState<PermissionModule[]>([]);
+
+  const canonicalModuleKeys = useMemo(
+    () => new Set(permissionModules.flatMap((m) => m.permissions.map((p) => p.key as string))),
+    [permissionModules]
+  );
+
+  const countCanonicalPermissions = (perms?: string[]) => {
+    if (!perms || perms.length === 0) return 0;
+    if (canonicalModuleKeys.size === 0) return perms.length;
+    return perms.filter((p) => canonicalModuleKeys.has(p)).length;
+  };
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -181,6 +198,10 @@ export default function TeamManagementPage() {
             : m
         )
       );
+
+      if (selectedMemberForPermissions.isSelf) {
+        await refreshUser();
+      }
 
       setTimeout(() => {
         setIsPermissionsModalOpen(false);
@@ -332,31 +353,33 @@ export default function TeamManagementPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setInviteError(null);
-            setInviteSuccess(null);
-            setIsInviteModalOpen(true);
-          }}
-          className="btn-primary"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 20px',
-            borderRadius: 'var(--radius-md)',
-            background: 'linear-gradient(135deg, var(--cyan-primary), var(--blue-vibrant))',
-            color: '#05101f',
-            fontWeight: 700,
-            fontSize: '0.9rem',
-            border: 'none',
-            cursor: 'pointer',
-            boxShadow: '0 4px 14px var(--cyan-glow)',
-          }}
-        >
-          <UserPlus size={18} />
-          Convidar Membro
-        </button>
+        {canInviteTeam && (
+          <button
+            onClick={() => {
+              setInviteError(null);
+              setInviteSuccess(null);
+              setIsInviteModalOpen(true);
+            }}
+            className="btn-primary"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              borderRadius: 'var(--radius-md)',
+              background: 'linear-gradient(135deg, var(--cyan-primary), var(--blue-vibrant))',
+              color: '#05101f',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px var(--cyan-glow)',
+            }}
+          >
+            <UserPlus size={18} />
+            Convidar Membro
+          </button>
+        )}
       </div>
 
       {/* Cards de Métricas */}
@@ -528,30 +551,32 @@ export default function TeamManagementPage() {
                             border: '1px solid rgba(0, 210, 211, 0.25)',
                           }}
                         >
-                          {member.permissions?.length || 0} ativas
+                          {countCanonicalPermissions(member.permissions)} ativas
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPermissionsModal(member)}
-                          style={{
-                            background: 'var(--btn-ghost-bg)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '4px 8px',
-                            fontSize: '0.74rem',
-                            fontWeight: 600,
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            transition: 'all 0.15s ease',
-                          }}
-                          title="Configurar prerrogativas granulares deste membro"
-                        >
-                          <Sliders size={12} color="var(--cyan-primary)" />
-                          Configurar
-                        </button>
+                        {canManageTeam && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPermissionsModal(member)}
+                            style={{
+                              background: 'var(--btn-ghost-bg)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '4px 8px',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.15s ease',
+                            }}
+                            title="Configurar prerrogativas granulares deste membro"
+                          >
+                            <Sliders size={12} color="var(--cyan-primary)" />
+                            Configurar
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -604,6 +629,8 @@ export default function TeamManagementPage() {
                     <td style={{ padding: '16px 20px', textAlign: 'right' }}>
                       {member.isSelf ? (
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Conta ativa</span>
+                      ) : !canManageTeam ? (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Somente leitura</span>
                       ) : (
                         <button
                           disabled={actionLoadingId === member.id}
@@ -721,7 +748,7 @@ export default function TeamManagementPage() {
                           border: '1px solid rgba(0, 210, 211, 0.25)',
                         }}
                       >
-                        {inv.permissions?.length || 0} concedidas
+                        {countCanonicalPermissions(inv.permissions)} concedidas
                       </span>
                     </td>
                     <td style={{ padding: '14px 20px' }}>
@@ -1022,6 +1049,7 @@ export default function TeamManagementPage() {
                 </label>
                 <PermissionsMatrixSelector
                   role={inviteRole}
+                  roleName={ROLE_LABELS[inviteRole] || inviteRole}
                   roleCeilings={roleCeilings}
                   roleDefaults={roleDefaults}
                   permissionModules={permissionModules}
@@ -1208,6 +1236,7 @@ export default function TeamManagementPage() {
               <div>
                 <PermissionsMatrixSelector
                   role={selectedMemberForPermissions.role}
+                  roleName={ROLE_LABELS[selectedMemberForPermissions.role] || selectedMemberForPermissions.role}
                   roleCeilings={roleCeilings}
                   roleDefaults={roleDefaults}
                   permissionModules={permissionModules}
