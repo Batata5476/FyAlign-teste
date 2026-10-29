@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Next.js build & TypeScript cache
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Local SQLite database & local S3 fallback vault
+prisma/dev.db
+prisma/dev.db-journal
+storage-vault/
+
+# Coverage & OS metadata
+coverage/
+.DS_Store
+Thumbs.db

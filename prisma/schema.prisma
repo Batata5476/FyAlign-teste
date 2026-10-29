@@ -1,0 +1,667 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// 1. ORGANIZAÇÃO (Tenants: Clínicas Parceiras e Laboratório Matriz)
+// ============================================================================
+model Organization {
+  id          String       @id @default(uuid())
+  type        String       @default("CLINIC") // FYALIGN, CLINIC
+  tradeName   String
+  legalName   String
+  taxId       String       @unique // CNPJ
+  address     String?
+  city        String?
+  state       String?
+  postalCode  String?
+  phone       String?
+  status      String       @default("ACTIVE") // PENDING, ACTIVE, SUSPENDED
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  memberships Membership[]
+  invitations Invitation[]
+  patients    Patient[]
+  cases       Case[]
+  auditLogs   AuditLog[]
+  legacyUsers User[]       @relation("LegacyUserClinic")
+}
+
+// ============================================================================
+// 2. USUÁRIO (Identidade e Credenciais da Pessoa Física)
+// ============================================================================
+model User {
+  id                  String           @id @default(uuid())
+  email               String           @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  avatarUrl           String?
+  isActive            Boolean          @default(true)
+  twoFactorEnabled    Boolean          @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  // Multi-Tenancy & Governança (Fonte da Verdade)
+  memberships         Membership[]
+  sessions            Session[]
+  sentInvitations     Invitation[]     @relation("SentInvitations")
+  invitedMemberships  Membership[]     @relation("MembershipInvitedBy")
+  createdAssignments CaseAssignment[] @relation("AssignmentsCreated")
+
+  // Casos e Atividades Clínicas
+  casesAsDoctor       Case[]           @relation("DoctorCases")
+  casesAsPlanner      Case[]           @relation("PlannerCases")
+  uploadedFiles       CaseFile[]
+  approvedSetups      Setup[]          @relation("ApprovedSetups")
+  messages            CaseMessage[]
+  auditLogs           AuditLog[]
+
+  // Relações Comerciais e Operacionais da Matriz de Arquitetura Final
+  confirmedContracts            CaseCommercialContract[] @relation("ConfirmedContracts")
+  contractVersionsChanged       ContractVersion[]        @relation("ContractVersionsChanged")
+  qcApprovedUnits               ProductionUnit[]         @relation("QcApprovedUnits")
+  dispatchedShipments           Shipment[]               @relation("DispatchedShipments")
+  requestedRefinements          RefinementRequest[]      @relation("RequestedRefinements")
+  clinicallyApprovedRefinements RefinementRequest[]      @relation("ClinicallyApprovedRefinements")
+  commerciallyApprovedRefinements RefinementRequest[]    @relation("CommerciallyApprovedRefinements")
+
+  // Campos de compatibilidade durante migração gradual (Fase 1 -> 3)
+  role                String?
+  clinicId            String?
+  professionalIdCro   String?
+  legacyClinic        Organization?    @relation("LegacyUserClinic", fields: [clinicId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================================
+// 3. VÍNCULO (Membership: Liga User à Organization com Role, Status e CRO)
+// ============================================================================
+model Membership {
+  id              String           @id @default(uuid())
+  userId          String
+  organizationId  String
+  role            String           // SUPER_ADMIN, PLANNER_3D, PRODUCTION_QC, FINANCE, SUPPORT, CLINIC_ADMIN, DOCTOR, CLINIC_ASSISTANT
+  status          String           @default("ACTIVE") // INVITED, PENDING_VERIFICATION, ACTIVE, SUSPENDED, DISABLED
+  croNumber       String?
+  croUf           String?
+  croStatus       String           @default("NOT_REQUIRED") // NOT_REQUIRED, PENDING, VERIFIED, REJECTED
+  croVerifiedAt   DateTime?
+  invitedById     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       User?            @relation("MembershipInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  caseAssignments CaseAssignment[]
+  doctorCases     Case[]           @relation("DoctorCaseMemberships")
+  auditLogs       AuditLog[]
+  sessions        Session[]
+  permissions     MembershipPermission[]
+
+  @@unique([userId, organizationId, role])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// ============================================================================
+// 3.1 PERMISSÕES DE VÍNCULO (Granular Custom Permissions per Membership)
+// ============================================================================
+model MembershipPermission {
+  id           String     @id @default(uuid())
+  membershipId String
+  permission   String     // Código da permissão (ex: CASE_READ, CASE_CREATE, SETUP_APPROVE)
+  createdAt    DateTime   @default(now())
+
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, permission])
+  @@index([membershipId])
+}
+
+// ============================================================================
+// 4. CONVITES (Token Seguro e Atribuição Travada com Permissões Concedidas)
+// ============================================================================
+model Invitation {
+  id              String       @id @default(uuid())
+  organizationId  String
+  email           String
+  role            String       // Papel base (teto de permissões)
+  tokenHash       String       @unique
+  croNumber       String?
+  croUf           String?
+  status          String       @default("PENDING") // PENDING, ACCEPTED, REVOKED, EXPIRED
+  expiresAt       DateTime
+  invitedById     String
+  acceptedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       User                   @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+  permissions     InvitationPermission[]
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+// ============================================================================
+// 4.1 PERMISSÕES DO CONVITE (Permissões granulares atribuídas no momento do convite)
+// ============================================================================
+model InvitationPermission {
+  id           String     @id @default(uuid())
+  invitationId String
+  permission   String
+  createdAt    DateTime   @default(now())
+
+  invitation   Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+
+  @@unique([invitationId, permission])
+  @@index([invitationId])
+}
+
+// ============================================================================
+// 5. ATRIBUIÇÃO DE CASOS (CaseAssignment: Planner, QC, Suporte com Histórico)
+// ============================================================================
+model CaseAssignment {
+  id            String      @id @default(uuid())
+  caseId        String
+  membershipId  String
+  roleInCase    String      @default("PLANNER") // PLANNER, QC, SUPPORT
+  status        String      @default("ACTIVE")  // ACTIVE, COMPLETED, REASSIGNED
+  assignedById  String?
+  assignedAt    DateTime    @default(now())
+  completedAt   DateTime?
+  notes         String?
+
+  case          Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  membership    Membership  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  assignedBy    User?       @relation("AssignmentsCreated", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, membershipId])
+}
+
+// ============================================================================
+// 6. PACIENTES
+// ============================================================================
+model Patient {
+  id          String       @id @default(uuid())
+  clinicId    String
+  fullName    String
+  birthDate   DateTime
+  gender      String
+  phone       String
+  email       String?
+  tcleSigned  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  clinic      Organization @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  cases       Case[]
+}
+
+// ============================================================================
+// 7. CASO CLÍNICO
+// ============================================================================
+model Case {
+  id                    String           @id @default(uuid())
+  caseCode              String           @unique
+  patientId             String
+  doctorId              String
+  doctorMembershipId    String?
+  clinicId              String
+  status                String           @default("DRAFT")
+  treatedArches         String           @default("BOTH") // UPPER, LOWER, BOTH
+  chiefComplaint        String?
+  angleClass            String?
+  restrictedTeethFdi    String?          // JSON Array string: ["16", "36"]
+  iprPreferences        String?          // JSON Object string
+  attachmentPreferences String?          // JSON Object string
+  doctorNotes           String?
+  assignedPlannerId     String?
+  parentCaseId          String?
+  submittedAt           DateTime?
+  approvedAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  patient               Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor                User             @relation("DoctorCases", fields: [doctorId], references: [id])
+  doctorMembership      Membership?      @relation("DoctorCaseMemberships", fields: [doctorMembershipId], references: [id], onDelete: SetNull)
+  clinic                Organization     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  assignedPlanner       User?            @relation("PlannerCases", fields: [assignedPlannerId], references: [id])
+  parentCase            Case?            @relation("CaseRefinements", fields: [parentCaseId], references: [id])
+  refinements           Case[]           @relation("CaseRefinements")
+
+  files                 CaseFile[]
+  setups                Setup[]
+  messages              CaseMessage[]
+  auditLogs             AuditLog[]
+  orders                Order[]
+  assignments           CaseAssignment[]
+
+  // Novas Relações Clínicas Estruturadas (Contrato Canônico)
+  clinicalCondition     ClinicalCondition?
+  treatmentPlan         TreatmentPlan?
+  consents              CaseConsent[]
+
+  // Relações Operacionais e Comerciais (Arquitetura Final v1.0)
+  commercialContract    CaseCommercialContract?
+  productionUnits       ProductionUnit[]
+  shipments             Shipment[]
+  refinementRequests    RefinementRequest[]
+}
+
+// ============================================================================
+// 8. ARQUIVOS DO CASO
+// ============================================================================
+model CaseFile {
+  id                String    @id @default(uuid())
+  caseId            String
+  slotNumber        Int
+  category          String    // EXTRAORAL, INTRAORAL, RADIOGRAPH, SCAN_3D
+  type              String?   // Subtipo clínico específico (ex: STL_MAXILLA, STL_MANDIBLE, PHOTO_FRONTAL, etc.)
+  originalFileName  String
+  storageKey        String
+  mimeType          String
+  fileSizeBytes     Int
+  fileHashSha256    String?
+  status            String    @default("PENDING") // PENDING, UPLOADING, UPLOADED, VERIFIED, ERROR
+  uploadedById      String?
+  createdAt         DateTime  @default(now())
+
+  case              Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedBy        User?     @relation(fields: [uploadedById], references: [id])
+}
+
+// ============================================================================
+// 9. SETUP VIRTUAL 3D
+// ============================================================================
+model Setup {
+  id                  String       @id @default(uuid())
+  caseId              String
+  versionNumber       Int          @default(1)
+  status              String       @default("DRAFT") // DRAFT, PUBLISHED, REJECTED, APPROVED
+  upperAlignersCount  Int          @default(0)
+  lowerAlignersCount  Int          @default(0)
+  modelStorageUrl     String?
+  iprSchedule         String?      // JSON string
+  attachmentSchedule  String?      // JSON string
+  plannerComments     String?
+  approvedByDoctorId  String?
+  approvedAt          DateTime?
+  approvalIpAddress   String?
+  createdAt           DateTime     @default(now())
+
+  case                Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  approvedByDoctor    User?        @relation("ApprovedSetups", fields: [approvedByDoctorId], references: [id])
+  stages              SetupStage[]
+}
+
+model SetupStage {
+  id                      String    @id @default(uuid())
+  setupId                 String
+  stageIndex              Int
+  upperMeshStorageKey     String?
+  lowerMeshStorageKey     String?
+  toothTransformMatrices  String?   // JSON string
+
+  setup                   Setup     @relation(fields: [setupId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// 10. MENSAGENS E CHAT
+// ============================================================================
+model CaseMessage {
+  id                  String    @id @default(uuid())
+  caseId              String
+  senderId            String
+  content             String
+  mentionedTeethFdi   String?
+  attachmentUrls      String?   // JSON string
+  isInternalLabOnly   Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+
+  case                Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sender              User      @relation(fields: [senderId], references: [id])
+}
+
+// ============================================================================
+// 11. AUDITORIA & GOVERNANÇA (LGPD)
+// ============================================================================
+model AuditLog {
+  id              String        @id @default(uuid())
+  caseId          String?
+  userId          String
+  organizationId  String?
+  membershipId    String?
+  action          String
+  entityAffected  String
+  payloadDiff     String?       // JSON string
+  ipAddress       String
+  userAgent       String
+  createdAt       DateTime      @default(now())
+
+  case            Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  membership      Membership?   @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([caseId])
+}
+
+// ============================================================================
+// 12. ORDENS E FATURAMENTO
+// ============================================================================
+model Order {
+  id              String    @id @default(uuid())
+  caseId          String
+  orderCode       String    @unique
+  planType        String    // LITE, MODERATE, FULL, REFINEMENT
+  amount          Float
+  paymentStatus   String    @default("PENDING") // PENDING, PAID, BILLED, CANCELLED
+  trackingCode    String?
+  carrierName     String?
+  dispatchedAt    DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  case            Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  contractId      String?
+  contract        CaseCommercialContract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================================
+// 13. SESSÕES GERENCIÁVEIS (Revogação Imediata e Auditoria de Acesso)
+// ============================================================================
+model Session {
+  id             String       @id @default(uuid())
+  userId         String
+  membershipId   String
+  ipAddress      String?
+  userAgent      String?
+  isValid        Boolean      @default(true)
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership     Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([membershipId])
+}
+
+// ============================================================================
+// 14. CONDIÇÃO CLÍNICA EXISTENTE (ClinicalCondition: Oclusão e Linha Média Atual)
+// ============================================================================
+model ClinicalCondition {
+  id           String   @id @default(uuid())
+  caseId       String   @unique
+
+  upperMidline String   // CENTERED, DEVIATED_RIGHT, DEVIATED_LEFT
+  lowerMidline String   // CENTERED, DEVIATED_RIGHT, DEVIATED_LEFT
+
+  canineRight  String   // CLASS_I, CLASS_II, CLASS_III
+  canineLeft   String   // CLASS_I, CLASS_II, CLASS_III
+
+  molarRight   String   // CLASS_I, CLASS_II, CLASS_III
+  molarLeft    String   // CLASS_I, CLASS_II, CLASS_III
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// 15. PLANO DE TRATAMENTO PARAMETRIZADO (TreatmentPlan: Ações Biomecânicas)
+// ============================================================================
+model TreatmentPlan {
+  id                     String   @id @default(uuid())
+  caseId                 String   @unique
+
+  upperMidline           String   // MAINTAIN, IMPROVE
+  lowerMidline           String   // MAINTAIN, IMPROVE
+  overjet                String   // MAINTAIN, IMPROVE
+  overbite               String   // MAINTAIN, IMPROVE
+  archForm               String   // MAINTAIN, IMPROVE
+  expansion              String   // MAINTAIN, IMPROVE
+  canineRelationship     String   // MAINTAIN, IMPROVE
+  molarRelationship      String   // MAINTAIN, IMPROVE
+
+  ipr                    Boolean  @default(false)
+
+  attachment             Boolean  @default(false)
+  intermaxillaryElastic  String   @default("NO") // NO, IF_NECESSARY, YES
+
+  classIICorrection      String   @default("DO_NOT_CORRECT") // CORRECT, DO_NOT_CORRECT
+  classIIICorrection     String   @default("DO_NOT_CORRECT") // CORRECT, DO_NOT_CORRECT
+
+  smartAttachments       String?
+  diastemas              String   @default("NONE") // NONE, CLOSE_ALL, CLOSE_SELECTED
+
+  additionalInstructions String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  case                   Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// 16. TERMO DE CONSENTIMENTO E AUDITORIA (CaseConsent: Fonte da Verdade Legal)
+// ============================================================================
+model CaseConsent {
+  id              String   @id @default(uuid())
+  caseId          String
+
+  policyVersion   String
+  policyHash      String
+
+  acceptedAt      DateTime @default(now())
+  ipAddress       String?
+  userAgent       String?
+
+  scrollCompleted Boolean  @default(false)
+
+  signatureKey    String?
+  signatureHash   String?
+
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+// ============================================================================
+// 17. CONTRATO COMERCIAL ÚNICO POR CASO E VERSÕES IMUTÁVEIS
+// ============================================================================
+model CaseCommercialContract {
+  id                    String            @id @default(uuid())
+  caseId                String            @unique // Exatamente 1 contrato vigente por caso
+  contractCode          String            @unique // Ex: "CTR-2026-0001"
+  versionNumber         Int               @default(1)
+  status                String            @default("DRAFT") // DRAFT, CONFIRMED, AMENDED, CANCELLED
+
+  packageName           String            // Ex: "FyAlign Comprehensive", "FyAlign Lite 14"
+  contractedAligners    Int               // Quantidade total de pares contratados
+  totalPriceCents       Int               // Valor em centavos inteiros (Ex: 120000 = R$ 1.200,00)
+  currency              String            @default("BRL")
+
+  productionModel       String            @default("HYBRID") // ALL_AT_ONCE, PHASED_BATCHES, HYBRID
+  deliveryModel         String            @default("BATCHED")  // SINGLE_SHIPMENT, STAGED_SHIPMENTS
+
+  // Política de Refinamentos Acordada
+  includedRefinements   Int               @default(0)    // Franquia de refinamentos inclusos
+  refinementWindowDays  Int               @default(180)  // Janela em dias para solicitar
+  extraAlignerPriceCents Int              @default(0)    // Custo em centavos por par excedente
+
+  commercialNotes       String?
+  confirmedById         String?
+  confirmedAt           DateTime?
+
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  case                  Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  confirmedBy           User?             @relation("ConfirmedContracts", fields: [confirmedById], references: [id])
+  versions              ContractVersion[]
+  productionUnits       ProductionUnit[]
+  refinements           RefinementRequest[]
+  orders                Order[]
+}
+
+model ContractVersion {
+  id                    String                  @id @default(uuid())
+  contractId            String
+  versionNumber         Int
+
+  contractedAligners    Int
+  totalPriceCents       Int
+  productionModel       String
+  deliveryModel         String
+  includedRefinements   Int
+  refinementWindowDays  Int
+  extraAlignerPriceCents Int
+
+  snapshotJson          String                  // Cópia serializada integral (incluindo cronograma)
+  changeReason          String                  // Justificativa obrigatória da alteração
+  changedById           String
+  createdAt             DateTime                @default(now())
+
+  contract              CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  changedBy             User                    @relation("ContractVersionsChanged", fields: [changedById], references: [id])
+
+  @@unique([contractId, versionNumber])
+  @@index([contractId])
+}
+
+// ============================================================================
+// 18. UNIDADES DE PRODUÇÃO (RASTREAMENTO HÍBRIDO: PARES E LOTES)
+// ============================================================================
+model ProductionUnit {
+  id                  String                  @id @default(uuid())
+  contractId          String
+  caseId              String
+  refinementRequestId String?
+
+  unitCode            String                  // Ex: "LOTE-01" ou "PAR-05"
+  type                String                  @default("BATCH") // SINGLE_PAIR, BATCH
+  quantityPairs       Int                     // Quantidade total física que esta unidade representa
+  shippedQuantity     Int                     @default(0) // Quantidade já expedida
+  stagesDescription   String                  // Ex: "Estágios 01 a 06 (Superior e Inferior)"
+
+  status              String                  @default("PENDING")
+  // PENDING, IN_PRODUCTION, QC_INSPECTION, QC_PASSED, QC_REJECTED, SHIPPED
+
+  plannedStartDate    DateTime?
+  plannedEndDate      DateTime?
+  actualStartDate     DateTime?
+  actualEndDate       DateTime?
+
+  qcApprovedAt        DateTime?
+  qcApprovedById      String?
+  qcNotes             String?
+
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  contract            CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  case                Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  refinement          RefinementRequest?      @relation(fields: [refinementRequestId], references: [id])
+  qcApprovedBy        User?                   @relation("QcApprovedUnits", fields: [qcApprovedById], references: [id])
+  shipmentItems       ShipmentItem[]
+
+  @@index([caseId])
+  @@index([contractId])
+}
+
+// ============================================================================
+// 19. EXPEDIÇÃO FÍSICA E REMESSAS (ENTREGAS PARCIAIS COM INTEGRIDADE)
+// ============================================================================
+model Shipment {
+  id                  String          @id @default(uuid())
+  caseId              String
+  shipmentCode        String          @unique // Ex: "SHP-2026-0001"
+  carrierName         String          // Ex: "Correios Sedex", "Loggi", "DHL"
+  trackingCode        String?
+  status              String          @default("PREPARING") // PREPARING, DISPATCHED, DELIVERED, RETURNED
+
+  plannedDate         DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+
+  notes               String?
+  dispatchedById      String?
+  createdAt           DateTime        @default(now())
+
+  case                Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  dispatchedBy        User?           @relation("DispatchedShipments", fields: [dispatchedById], references: [id])
+  items               ShipmentItem[]
+
+  @@index([caseId])
+}
+
+model ShipmentItem {
+  id                  String          @id @default(uuid())
+  shipmentId          String
+  productionUnitId    String
+  quantityShipped     Int
+
+  shipment            Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  productionUnit      ProductionUnit  @relation(fields: [productionUnitId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([productionUnitId])
+}
+
+// ============================================================================
+// 20. REFINAMENTOS DESACOPLADOS (SEM DUPLICAR O CASO CLÍNICO)
+// ============================================================================
+model RefinementRequest {
+  id                          String                  @id @default(uuid())
+  caseId                      String
+  contractId                  String
+  contractVersionUsed         Int
+  sequenceNumber              Int
+
+  clinicalReason              String
+  clinicalStatus              String                  @default("PENDING_DOCTOR_APPROVAL")
+  // PENDING_DOCTOR_APPROVAL, CLINICALLY_APPROVED, CLINICALLY_REJECTED
+
+  // Decisão Comercial Independente
+  isCoveredByContract         Boolean                 @default(true)
+  extraAlignersCount          Int                     @default(0)
+  extraAmountChargedCents     Int                     @default(0)
+  commercialStatus            String                  @default("APPROVED")
+  // APPROVED, PENDING_COMMERCIAL_APPROVAL, COMMERCIALLY_APPROVED, COMMERCIAL_REJECTED
+
+  requestedById               String
+  clinicallyApprovedById      String?
+  commerciallyApprovedById    String?
+  clinicallyApprovedAt        DateTime?
+  commerciallyApprovedAt      DateTime?
+
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+
+  case                        Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  contract                    CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  requestedBy                 User                    @relation("RequestedRefinements", fields: [requestedById], references: [id])
+  clinicallyApprovedBy        User?                   @relation("ClinicallyApprovedRefinements", fields: [clinicallyApprovedById], references: [id])
+  commerciallyApprovedBy      User?                   @relation("CommerciallyApprovedRefinements", fields: [commerciallyApprovedById], references: [id])
+  productionUnits             ProductionUnit[]
+
+  @@unique([caseId, sequenceNumber])
+  @@index([caseId])
+  @@index([contractId])
+}

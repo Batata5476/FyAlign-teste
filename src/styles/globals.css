@@ -1,0 +1,995 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+/* ==========================================================================
+   SISTEMA DE DESIGN TOKENS FYALIGN - MEDICAL HIGH-TECH (DARK & LIGHT MODE)
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 1. Camadas e Elevação (Dark Mode) */
+  --bg-main: #060b14;
+  --bg-surface: #0a1322;
+  --bg-card: #0f1f35;
+  --bg-card-hover: #142844;
+  --bg-glass: rgba(15, 31, 53, 0.85);
+  --bg-glass-card: rgba(17, 35, 60, 0.8);
+  
+  /* Kanban Dropzone & Cards */
+  --bg-kanban-col: #0b1728;
+  --bg-kanban-header: rgba(10, 22, 38, 0.85);
+  --bg-kanban-card: #12243d;
+  --bg-kanban-card-hover: #162c4b;
+
+  /* Bordas Sutis & Elevação */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-card: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(0, 210, 211, 0.45);
+  --border-cyan: #00d2d3;
+
+  /* Cores de Marca */
+  --cyan-primary: #00d2d3;
+  --cyan-glow: rgba(0, 210, 211, 0.28);
+  --cyan-focus-glow: rgba(0, 210, 211, 0.25);
+  --cyan-dark: #009b9c;
+  --blue-vibrant: #0ea5e9;
+  --blue-deep: #0a192f;
+
+  /* Tipografia & Textos */
+  --text-main: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-cyan: #38bdf8;
+
+  /* Sombras Suaves (Profundidade) */
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-glow: 0 0 25px rgba(0, 210, 211, 0.18);
+
+  /* Formulários & Inputs */
+  --input-bg: #081324;
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-text: #f8fafc;
+  --input-placeholder: #64748b;
+  --focus-ring: rgba(0, 210, 211, 0.25);
+
+  /* Tabelas */
+  --table-th-bg: rgba(12, 24, 43, 0.85);
+  --table-th-text: #94a3b8;
+  --table-tr-hover: rgba(255, 255, 255, 0.035);
+  --table-border: rgba(255, 255, 255, 0.07);
+
+  /* Botões Neutros & Secundários */
+  --btn-ghost-bg: rgba(255, 255, 255, 0.05);
+  --btn-ghost-hover: rgba(255, 255, 255, 0.1);
+  --btn-secondary-border: rgba(255, 255, 255, 0.14);
+
+  /* Badges Semânticos (Dark) */
+  --badge-draft-bg: rgba(148, 163, 184, 0.14);
+  --badge-draft-text: #cbd5e1;
+  --badge-draft-border: rgba(148, 163, 184, 0.25);
+
+  --badge-setup-bg: rgba(0, 210, 211, 0.18);
+  --badge-setup-text: #00d2d3;
+  --badge-setup-border: rgba(0, 210, 211, 0.4);
+
+  --badge-approved-bg: rgba(16, 185, 129, 0.18);
+  --badge-approved-text: #10b981;
+  --badge-approved-border: rgba(16, 185, 129, 0.35);
+
+  --badge-warning-bg: rgba(245, 158, 11, 0.18);
+  --badge-warning-text: #fbbf24;
+  --badge-warning-border: rgba(245, 158, 11, 0.35);
+
+  --badge-danger-bg: rgba(239, 68, 68, 0.18);
+  --badge-danger-text: #f87171;
+  --badge-danger-border: rgba(239, 68, 68, 0.35);
+
+  /* Componentes Específicos */
+  --tooth-normal-bg: rgba(15, 33, 61, 0.85);
+  --tooth-normal-border: rgba(255, 255, 255, 0.14);
+  --upload-empty-bg: rgba(10, 23, 42, 0.75);
+  --upload-drag-bg: rgba(0, 210, 211, 0.12);
+  --chat-clinic-bg: #1e3a5f;
+  --chat-lab-bg: #153250;
+}
+
+/* ==========================================================================
+   TEMA CLARO (LIGHT MODE) - ALTO CONFORTO VISUAL E IDENTIDADE FYALIGN
+   ========================================================================== */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* 1. Camadas e Elevação (Light Mode) */
+  --bg-main: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-glass: rgba(255, 255, 255, 0.94);
+  --bg-glass-card: rgba(255, 255, 255, 0.98);
+
+  /* Kanban Dropzone & Cards */
+  --bg-kanban-col: #eef2f6;
+  --bg-kanban-header: #e2e8f0;
+  --bg-kanban-card: #ffffff;
+  --bg-kanban-card-hover: #f8fafc;
+
+  /* Bordas Sutis & Elevação */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-card: rgba(15, 23, 42, 0.08);
+  --border-hover: rgba(0, 180, 181, 0.5);
+  --border-cyan: #0284c7;
+
+  /* Cores de Marca (Calibradas para contraste WCAG AA no fundo claro) */
+  --cyan-primary: #009b9c;
+  --cyan-glow: rgba(0, 155, 156, 0.2);
+  --cyan-focus-glow: rgba(0, 155, 156, 0.2);
+  --cyan-dark: #007677;
+  --blue-vibrant: #0284c7;
+  --blue-deep: #0f172a;
+
+  /* Tipografia & Textos */
+  --text-main: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+  --text-cyan: #0369a1;
+
+  /* Sombras Suaves (Profundidade & Flutuação) */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 4px 16px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-elevated: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-glow: 0 0 20px rgba(0, 155, 156, 0.15);
+
+  /* Formulários & Inputs (Contraste com o cartão branco) */
+  --input-bg: #f8fafc;
+  --input-border: #cbd5e1;
+  --input-text: #0f172a;
+  --input-placeholder: #94a3b8;
+  --focus-ring: rgba(0, 155, 156, 0.22);
+
+  /* Tabelas */
+  --table-th-bg: #f1f5f9;
+  --table-th-text: #475569;
+  --table-tr-hover: #f8fafc;
+  --table-border: #e2e8f0;
+
+  /* Botões Neutros & Secundários */
+  --btn-ghost-bg: rgba(15, 23, 42, 0.04);
+  --btn-ghost-hover: rgba(15, 23, 42, 0.08);
+  --btn-secondary-border: #cbd5e1;
+
+  /* Badges Semânticos (Light - Alto Contraste) */
+  --badge-draft-bg: #f1f5f9;
+  --badge-draft-text: #475569;
+  --badge-draft-border: #cbd5e1;
+
+  --badge-setup-bg: #e0f2fe;
+  --badge-setup-text: #0369a1;
+  --badge-setup-border: #bae6fd;
+
+  --badge-approved-bg: #ecfdf5;
+  --badge-approved-text: #047857;
+  --badge-approved-border: #a7f3d0;
+
+  --badge-warning-bg: #fffbeb;
+  --badge-warning-text: #b45309;
+  --badge-warning-border: #fde68a;
+
+  --badge-danger-bg: #fef2f2;
+  --badge-danger-text: #b91c1c;
+  --badge-danger-border: #fecaca;
+
+  /* Componentes Específicos */
+  --tooth-normal-bg: #f8fafc;
+  --tooth-normal-border: #cbd5e1;
+  --upload-empty-bg: #f8fafc;
+  --upload-drag-bg: #e0f2fe;
+  --chat-clinic-bg: #e0f2fe;
+  --chat-lab-bg: #f1f5f9;
+}
+
+/* ==========================================================================
+   CONFIGURAÇÕES GERAIS DE TIPOGRAFIA E RESET
+   ========================================================================== */
+
+:root {
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-main);
+  background-image: 
+    radial-gradient(at 0% 0%, var(--cyan-glow) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(14, 165, 233, 0.05) 0px, transparent 45%);
+  background-attachment: fixed;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   1. PROFUNDIDADE E HIERARQUIA DE CARTÕES (ELEVATION)
+   ========================================================================== */
+
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.glass-panel:hover {
+  border-color: var(--border-hover);
+}
+
+.glass-panel-elevated {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+}
+
+.glow-cyan {
+  box-shadow: var(--shadow-glow);
+}
+
+/* ==========================================================================
+   2. REFINAMENTO DE BOTÕES (PRIMÁRIOS VS. SECUNDÁRIOS)
+   ========================================================================== */
+
+/* Ação Primária Destacada (exclusiva para ação mais importante da tela) */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--cyan-primary) 0%, var(--blue-vibrant) 100%);
+  color: #ffffff;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 0.92rem;
+  padding: 11px 22px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px var(--cyan-glow);
+  text-decoration: none;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--cyan-glow);
+  filter: brightness(1.08);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Ações Secundárias / Neutras (Outline / Ghost) */
+.btn-secondary,
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--btn-ghost-bg);
+  color: var(--text-main);
+  font-family: var(--font-heading);
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--btn-secondary-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-secondary:hover,
+.btn-outline:hover {
+  background: var(--btn-ghost-hover);
+  border-color: var(--border-hover);
+  color: var(--cyan-primary);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active,
+.btn-outline:active {
+  transform: translateY(0);
+}
+
+/* ==========================================================================
+   3. CORES SEMÂNTICAS PARA STATUS E BADGES
+   ========================================================================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.2s ease;
+}
+
+/* Rascunho / Incompleto: Cinza suave */
+.badge-draft {
+  background: var(--badge-draft-bg);
+  color: var(--badge-draft-text);
+  border: 1px solid var(--badge-draft-border);
+}
+
+/* Setup Pronto para Análise / V1 Disponível: Ciano destacado com alto contraste */
+.badge-setup-ready {
+  background: var(--badge-setup-bg);
+  color: var(--badge-setup-text);
+  border: 1px solid var(--badge-setup-border);
+  box-shadow: 0 0 10px var(--cyan-glow);
+  font-weight: 700;
+}
+
+/* Setup Aprovado: Verde Esmeralda */
+.badge-approved,
+.badge-success {
+  background: var(--badge-approved-bg);
+  color: var(--badge-approved-text);
+  border: 1px solid var(--badge-approved-border);
+}
+
+/* Em Produção / Aviso: Âmbar Suave */
+.badge-production,
+.badge-warning {
+  background: var(--badge-warning-bg);
+  color: var(--badge-warning-text);
+  border: 1px solid var(--badge-warning-border);
+}
+
+/* Alerta / Rejeitado / SLA Estourado: Vermelho Suave */
+.badge-danger,
+.badge-rejected {
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-text);
+  border: 1px solid var(--badge-danger-border);
+}
+
+/* ==========================================================================
+   4. REFINAMENTO DE FORMULÁRIOS E INPUTS
+   ========================================================================== */
+
+.form-input,
+select.form-input,
+textarea.form-input {
+  width: 100%;
+  min-height: 44px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--input-text);
+  font-size: 0.92rem;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+  outline: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-input::placeholder {
+  color: var(--input-placeholder);
+}
+
+.form-input:focus {
+  border-color: var(--cyan-primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+select.form-input option {
+  background: var(--bg-card);
+  color: var(--text-main);
+  padding: 8px;
+}
+
+/* ==========================================================================
+   5. TABELAS (MELHORIA NA LEITURA HORIZONTAL)
+   ========================================================================== */
+
+.custom-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.custom-table th {
+  background: var(--table-th-bg);
+  padding: 14px 18px;
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--table-th-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.custom-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--table-border);
+  font-size: 0.9rem;
+  color: var(--text-main);
+  vertical-align: middle;
+  transition: background-color 0.15s ease;
+}
+
+/* Efeito hover nítido guiando a leitura de prontuários */
+.custom-table tbody tr:hover td {
+  background: var(--table-tr-hover);
+}
+
+/* ==========================================================================
+   6. LAYOUT APP SHELL & COMPONENTES
+   ========================================================================== */
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-sidebar {
+  width: 260px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+  z-index: 40;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.sidebar-nav {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+.sidebar-logout-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-logout-btn:hover {
+  color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  transform: translateX(2px);
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.app-header {
+  height: 70px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.app-content {
+  flex: 1;
+  padding: 24px 32px;
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+  overflow-x: hidden;
+}
+
+/* Theme Toggle Button Hover */
+.theme-toggle-btn:hover {
+  background: var(--btn-ghost-hover) !important;
+  border-color: var(--border-hover) !important;
+  transform: rotate(15deg);
+}
+
+/* Animações Auxiliares */
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 2.5s infinite ease-in-out;
+}
+
+/* ==========================================================================
+   7. KANBAN CARROSSEL COM CONTROLE DE DESLIZE & DESIGN DE ALTA PRECISÃO
+   ========================================================================== */
+
+.kanban-carousel-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Setas de navegação flutuantes laterais */
+.kanban-carousel-btn {
+  position: absolute;
+  top: 48%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-hover);
+  color: var(--cyan-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16), 0 0 12px var(--cyan-glow);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+}
+
+.kanban-carousel-btn:hover {
+  background: var(--cyan-primary);
+  color: #060b14;
+  border-color: var(--cyan-primary);
+  transform: translateY(-50%) scale(1.12);
+  box-shadow: 0 6px 24px var(--cyan-glow);
+}
+
+.kanban-carousel-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.kanban-carousel-btn-left {
+  left: -14px;
+}
+
+.kanban-carousel-btn-right {
+  right: -14px;
+}
+
+.kanban-carousel-btn.disabled {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.7);
+}
+
+/* Controle Carrossel no Header com Dots das Etapas */
+.kanban-carousel-controller {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-glass-card);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.carousel-ctrl-btn {
+  background: var(--btn-ghost-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.carousel-ctrl-btn:hover:not(:disabled) {
+  background: rgba(0, 210, 211, 0.15);
+  color: var(--cyan-primary);
+  border-color: var(--cyan-primary);
+}
+
+.carousel-ctrl-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.carousel-step-indicators {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.carousel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border-subtle);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.carousel-dot:hover {
+  background: var(--dot-color, var(--cyan-primary));
+  transform: scale(1.3);
+}
+
+.carousel-dot.active {
+  background: var(--dot-color, var(--cyan-primary));
+  width: 22px;
+  border-radius: 6px;
+  box-shadow: 0 0 10px var(--cyan-glow);
+}
+
+/* Container do Kanban com Barras Removidas */
+.kanban-board-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  padding: 6px 2px;
+}
+
+.kanban-board-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.kanban-columns-container {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  min-width: max-content;
+  padding: 4px;
+}
+
+.kanban-column {
+  width: 295px;
+  min-width: 295px;
+  flex-shrink: 0;
+  background: var(--bg-kanban-col);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kanban-column:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-card);
+}
+
+.column-header {
+  padding: 14px 16px;
+  background: var(--bg-kanban-header);
+  border-radius: 14px 14px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.column-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.column-count-badge {
+  background: rgba(0, 210, 211, 0.1);
+  border: 1px solid rgba(0, 210, 211, 0.25);
+  color: var(--cyan-primary);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.column-cards-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
+}
+
+.column-cards-container::-webkit-scrollbar {
+  width: 5px;
+}
+
+.column-cards-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.column-cards-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+}
+
+.column-cards-container:hover::-webkit-scrollbar-thumb {
+  background: var(--cyan-primary);
+}
+
+/* Cards do Kanban */
+.kanban-card {
+  background: var(--bg-kanban-card);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 0.83rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.kanban-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-card);
+}
+
+.card-sla-breached {
+  border-left: 4px solid var(--crimson-danger) !important;
+}
+
+.card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.card-code {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--cyan-primary);
+  font-size: 0.86rem;
+}
+
+.sla-badge-alert {
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-text);
+  border: 1px solid var(--badge-danger-border);
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sla-badge-ok {
+  background: var(--badge-approved-bg);
+  color: var(--badge-approved-text);
+  border: 1px solid var(--badge-approved-border);
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.card-patient-name {
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.card-clinic-info {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.card-setup-badge {
+  background: var(--badge-setup-bg);
+  color: var(--badge-setup-text);
+  border: 1px solid var(--badge-setup-border);
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.card-tracking-badge {
+  background: var(--badge-setup-bg);
+  color: var(--text-cyan);
+  border: 1px solid var(--badge-setup-border);
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.card-actions-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  align-items: center;
+}
+
+.btn-card-action {
+  background: var(--btn-ghost-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-card-action:hover {
+  color: var(--cyan-primary);
+  border-color: var(--border-hover);
+  background: rgba(0, 210, 211, 0.08);
+}
+
+.btn-card-action-highlight {
+  background: var(--badge-setup-bg);
+  border: 1px solid var(--cyan-primary);
+  color: var(--cyan-primary);
+  font-size: 0.73rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-card-action-highlight:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.btn-card-action-next {
+  margin-left: auto;
+  background: linear-gradient(135deg, var(--cyan-primary), var(--blue-vibrant));
+  color: #060b14;
+  border: none;
+  font-size: 0.73rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--cyan-glow);
+  transition: all 0.15s ease;
+}
+
+.btn-card-action-next:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--cyan-glow);
+}
+
+/* Empty State da Coluna */
+.column-empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 12px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  border: 1.5px dashed var(--border-subtle);
+  border-radius: 10px;
+  margin: 4px;
+  background: rgba(255, 255, 255, 0.015);
+  transition: border-color 0.2s ease;
+}
+
+.column-empty-placeholder:hover {
+  border-color: var(--border-hover);
+}
+
+.column-empty-icon {
+  opacity: 0.45;
+  color: var(--text-muted);
+}
+
+

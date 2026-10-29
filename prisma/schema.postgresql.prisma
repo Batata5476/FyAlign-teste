@@ -1,0 +1,678 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// ENUMS NATIVOS POSTGRESQL
+// ============================================================================
+enum OrganizationType {
+  FYALIGN
+  CLINIC
+}
+
+enum OrganizationStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  PLANNER_3D
+  PRODUCTION_QC
+  FINANCE
+  SUPPORT
+  CLINIC_ADMIN
+  DOCTOR
+  CLINIC_ASSISTANT
+}
+
+enum MembershipStatus {
+  INVITED
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum CROStatus {
+  NOT_REQUIRED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum AssignmentRole {
+  PLANNER
+  QC
+  SUPPORT
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  COMPLETED
+  REASSIGNED
+}
+
+enum CaseStatus {
+  DRAFT
+  SUBMITTED
+  IN_TRIAGE
+  PENDING_DOCS
+  IN_PLANNING_3D
+  SETUP_AVAILABLE
+  ADJUSTMENT_REQUESTED
+  APPROVED_BY_DOCTOR
+  IN_PRODUCTION
+  QUALITY_CONTROL
+  DISPATCHED
+  DELIVERED
+  IN_TREATMENT
+  COMPLETED
+  REFINEMENT_REQUESTED
+}
+
+enum TreatedArches {
+  UPPER
+  LOWER
+  BOTH
+}
+
+enum FileStatus {
+  PENDING
+  UPLOADING
+  UPLOADED
+  VERIFIED
+  ERROR
+}
+
+enum SetupStatus {
+  DRAFT
+  PUBLISHED
+  REJECTED
+  APPROVED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  BILLED
+  CANCELLED
+}
+
+// ============================================================================
+// 1. ORGANIZAÇÃO (Tenants: Clínicas Parceiras e Laboratório Matriz)
+// ============================================================================
+model Organization {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type        OrganizationType   @default(CLINIC)
+  tradeName   String             @map("trade_name") @db.VarChar(255)
+  legalName   String             @map("legal_name") @db.VarChar(255)
+  taxId       String             @unique @map("tax_id") @db.VarChar(32)
+  address     String?            @db.VarChar(255)
+  city        String?            @db.VarChar(100)
+  state       String?            @db.VarChar(50)
+  postalCode  String?            @map("postal_code") @db.VarChar(20)
+  phone       String?            @db.VarChar(30)
+  status      OrganizationStatus @default(ACTIVE)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  memberships Membership[]
+  invitations Invitation[]
+  patients    Patient[]
+  cases       Case[]
+  auditLogs   AuditLog[]
+  legacyUsers User[]             @relation("LegacyUserClinic")
+
+  @@map("organizations")
+}
+
+// ============================================================================
+// 2. USUÁRIO (Pessoa Física & Credenciais Centrais)
+// ============================================================================
+model User {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String           @unique @db.VarChar(255)
+  passwordHash        String           @map("password_hash") @db.VarChar(255)
+  fullName            String           @map("full_name") @db.VarChar(255)
+  phone               String?          @db.VarChar(30)
+  avatarUrl           String?          @map("avatar_url") @db.VarChar(500)
+  isActive            Boolean          @default(true) @map("is_active")
+  twoFactorEnabled    Boolean          @default(false) @map("two_factor_enabled")
+  lastLoginAt         DateTime?        @map("last_login_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  // Vínculos & RBAC
+  memberships         Membership[]
+  sessions            Session[]
+  sentInvitations     Invitation[]     @relation("SentInvitations")
+  invitedMemberships  Membership[]     @relation("MembershipInvitedBy")
+  createdAssignments CaseAssignment[] @relation("AssignmentsCreated")
+
+  // Casos e Atividades
+  casesAsDoctor       Case[]           @relation("DoctorCases")
+  casesAsPlanner      Case[]           @relation("PlannerCases")
+  uploadedFiles       CaseFile[]
+  approvedSetups      Setup[]          @relation("ApprovedSetups")
+  messages            CaseMessage[]
+  auditLogs           AuditLog[]
+
+  // Relações Comerciais e Operacionais da Matriz de Arquitetura Final
+  confirmedContracts            CaseCommercialContract[] @relation("ConfirmedContracts")
+  contractVersionsChanged       ContractVersion[]        @relation("ContractVersionsChanged")
+  qcApprovedUnits               ProductionUnit[]         @relation("QcApprovedUnits")
+  dispatchedShipments           Shipment[]               @relation("DispatchedShipments")
+  requestedRefinements          RefinementRequest[]      @relation("RequestedRefinements")
+  clinicallyApprovedRefinements RefinementRequest[]      @relation("ClinicallyApprovedRefinements")
+  commerciallyApprovedRefinements RefinementRequest[]    @relation("CommerciallyApprovedRefinements")
+
+  // Legado de compatibilidade durante migração
+  role                UserRole?
+  clinicId            String?          @map("clinic_id") @db.Uuid
+  professionalIdCro   String?          @map("professional_id_cro") @db.VarChar(50)
+  legacyClinic        Organization?    @relation("LegacyUserClinic", fields: [clinicId], references: [id], onDelete: SetNull)
+
+  @@map("users")
+}
+
+// ============================================================================
+// 3. VÍNCULO (Membership: Liga User à Organization com Role, Status e CRO)
+// ============================================================================
+model Membership {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  organizationId  String           @map("organization_id") @db.Uuid
+  role            UserRole
+  status          MembershipStatus @default(ACTIVE)
+  croNumber       String?          @map("cro_number") @db.VarChar(50)
+  croUf           String?          @map("cro_uf") @db.VarChar(2)
+  croStatus       CROStatus        @default(NOT_REQUIRED) @map("cro_status")
+  croVerifiedAt   DateTime?        @map("cro_verified_at")
+  invitedById     String?          @map("invited_by_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       User?            @relation("MembershipInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  caseAssignments CaseAssignment[]
+  doctorCases     Case[]           @relation("DoctorCaseMemberships")
+  auditLogs       AuditLog[]
+  sessions        Session[]
+
+  @@unique([userId, organizationId, role])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+// ============================================================================
+// 4. CONVITES (Token Seguro e Atribuição Travada)
+// ============================================================================
+model Invitation {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String           @map("organization_id") @db.Uuid
+  email           String           @db.VarChar(255)
+  role            UserRole
+  tokenHash       String           @unique @map("token_hash") @db.VarChar(255)
+  croNumber       String?          @map("cro_number") @db.VarChar(50)
+  croUf           String?          @map("cro_uf") @db.VarChar(2)
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime         @map("expires_at")
+  invitedById     String           @map("invited_by_id") @db.Uuid
+  acceptedAt      DateTime?        @map("accepted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy       User             @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([organizationId])
+  @@map("invitations")
+}
+
+// ============================================================================
+// 5. ATRIBUIÇÃO DE CASOS (CaseAssignment: Planner, QC, Suporte com Histórico)
+// ============================================================================
+model CaseAssignment {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId        String           @map("case_id") @db.Uuid
+  membershipId  String           @map("membership_id") @db.Uuid
+  roleInCase    AssignmentRole   @default(PLANNER) @map("role_in_case")
+  status        AssignmentStatus @default(ACTIVE)
+  assignedById  String?          @map("assigned_by_id") @db.Uuid
+  assignedAt    DateTime         @default(now()) @map("assigned_at")
+  completedAt   DateTime?        @map("completed_at")
+  notes         String?          @db.Text
+
+  case          Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  membership    Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  assignedBy    User?            @relation("AssignmentsCreated", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, membershipId])
+  @@map("case_assignments")
+}
+
+// ============================================================================
+// 6. PACIENTES
+// ============================================================================
+model Patient {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId    String       @map("clinic_id") @db.Uuid
+  fullName    String       @map("full_name") @db.VarChar(255)
+  birthDate   DateTime     @map("birth_date") @db.Date
+  gender      String       @db.VarChar(20)
+  phone       String       @db.VarChar(30)
+  email       String?      @db.VarChar(255)
+  tcleSigned  Boolean      @default(false) @map("tcle_signed")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  clinic      Organization @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  cases       Case[]
+
+  @@map("patients")
+}
+
+// ============================================================================
+// 7. CASO CLÍNICO
+// ============================================================================
+model Case {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseCode              String           @unique @map("case_code") @db.VarChar(50)
+  patientId             String           @map("patient_id") @db.Uuid
+  doctorId              String           @map("doctor_id") @db.Uuid
+  doctorMembershipId    String?          @map("doctor_membership_id") @db.Uuid
+  clinicId              String           @map("clinic_id") @db.Uuid
+  status                CaseStatus       @default(DRAFT)
+  treatedArches         TreatedArches    @default(BOTH) @map("treated_arches")
+  chiefComplaint        String?          @map("chief_complaint") @db.Text
+  angleClass            String?          @map("angle_class") @db.VarChar(50)
+  restrictedTeethFdi    Json?            @map("restricted_teeth_fdi")
+  iprPreferences        Json?            @map("ipr_preferences")
+  attachmentPreferences Json?            @map("attachment_preferences")
+  doctorNotes           String?          @map("doctor_notes") @db.Text
+  assignedPlannerId     String?          @map("assigned_planner_id") @db.Uuid
+  parentCaseId          String?          @map("parent_case_id") @db.Uuid
+  submittedAt           DateTime?        @map("submitted_at")
+  approvedAt            DateTime?        @map("approved_at")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+
+  patient               Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor                User             @relation("DoctorCases", fields: [doctorId], references: [id])
+  doctorMembership      Membership?      @relation("DoctorCaseMemberships", fields: [doctorMembershipId], references: [id], onDelete: SetNull)
+  clinic                Organization     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  assignedPlanner       User?            @relation("PlannerCases", fields: [assignedPlannerId], references: [id])
+  parentCase            Case?            @relation("CaseRefinements", fields: [parentCaseId], references: [id])
+  refinements           Case[]           @relation("CaseRefinements")
+
+  files                 CaseFile[]
+  setups                Setup[]
+  messages              CaseMessage[]
+  auditLogs             AuditLog[]
+  orders                Order[]
+  assignments           CaseAssignment[]
+
+  // Relações Operacionais e Comerciais (Arquitetura Final v1.0)
+  commercialContract    CaseCommercialContract?
+  productionUnits       ProductionUnit[]
+  shipments             Shipment[]
+  refinementRequests    RefinementRequest[]
+
+  @@map("cases")
+}
+
+// ============================================================================
+// 8. ARQUIVOS DO CASO
+// ============================================================================
+model CaseFile {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId            String     @map("case_id") @db.Uuid
+  slotNumber        Int        @map("slot_number")
+  category          String     @db.VarChar(50)
+  originalFileName  String     @map("original_file_name") @db.VarChar(255)
+  storageKey        String     @map("storage_key") @db.VarChar(500)
+  mimeType          String     @map("mime_type") @db.VarChar(100)
+  fileSizeBytes     Int        @map("file_size_bytes")
+  fileHashSha256    String?    @map("file_hash_sha256") @db.VarChar(64)
+  status            FileStatus @default(PENDING)
+  uploadedById      String?    @map("uploaded_by_id") @db.Uuid
+  createdAt         DateTime   @default(now()) @map("created_at")
+
+  case              Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedBy        User?      @relation(fields: [uploadedById], references: [id])
+
+  @@map("case_files")
+}
+
+// ============================================================================
+// 9. SETUP VIRTUAL 3D
+// ============================================================================
+model Setup {
+  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId              String       @map("case_id") @db.Uuid
+  versionNumber       Int          @default(1) @map("version_number")
+  status              SetupStatus  @default(DRAFT)
+  upperAlignersCount  Int          @default(0) @map("upper_aligners_count")
+  lowerAlignersCount  Int          @default(0) @map("lower_aligners_count")
+  modelStorageUrl     String?      @map("model_storage_url") @db.VarChar(500)
+  iprSchedule         Json?        @map("ipr_schedule")
+  attachmentSchedule  Json?        @map("attachment_schedule")
+  plannerComments     String?      @map("planner_comments") @db.Text
+  approvedByDoctorId  String?      @map("approved_by_doctor_id") @db.Uuid
+  approvedAt          DateTime?    @map("approved_at")
+  approvalIpAddress   String?      @map("approval_ip_address") @db.VarChar(45)
+  createdAt           DateTime     @default(now()) @map("created_at")
+
+  case                Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  approvedByDoctor    User?        @relation("ApprovedSetups", fields: [approvedByDoctorId], references: [id])
+  stages              SetupStage[]
+
+  @@map("setups")
+}
+
+model SetupStage {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  setupId                 String   @map("setup_id") @db.Uuid
+  stageIndex              Int      @map("stage_index")
+  upperMeshStorageKey     String?  @map("upper_mesh_storage_key") @db.VarChar(500)
+  lowerMeshStorageKey     String?  @map("lower_mesh_storage_key") @db.VarChar(500)
+  toothTransformMatrices  Json?    @map("tooth_transform_matrices")
+
+  setup                   Setup    @relation(fields: [setupId], references: [id], onDelete: Cascade)
+
+  @@map("setup_stages")
+}
+
+// ============================================================================
+// 10. MENSAGENS E CHAT
+// ============================================================================
+model CaseMessage {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId              String   @map("case_id") @db.Uuid
+  senderId            String   @map("sender_id") @db.Uuid
+  content             String   @db.Text
+  mentionedTeethFdi   Json?    @map("mentioned_teeth_fdi")
+  attachmentUrls      Json?    @map("attachment_urls")
+  isInternalLabOnly   Boolean  @default(false) @map("is_internal_lab_only")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sender              User     @relation(fields: [senderId], references: [id])
+
+  @@map("case_messages")
+}
+
+// ============================================================================
+// 11. AUDITORIA & GOVERNANÇA (LGPD)
+// ============================================================================
+model AuditLog {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId          String?       @map("case_id") @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  organizationId  String?       @map("organization_id") @db.Uuid
+  membershipId    String?       @map("membership_id") @db.Uuid
+  action          String        @db.VarChar(100)
+  entityAffected  String        @map("entity_affected") @db.VarChar(100)
+  payloadDiff     Json?         @map("payload_diff")
+  ipAddress       String        @map("ip_address") @db.VarChar(45)
+  userAgent       String        @map("user_agent") @db.VarChar(255)
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  case            Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  membership      Membership?   @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([caseId])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// 12. ORDENS E FATURAMENTO
+// ============================================================================
+model Order {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId          String        @map("case_id") @db.Uuid
+  orderCode       String        @unique @map("order_code") @db.VarChar(50)
+  planType        String        @map("plan_type") @db.VarChar(50)
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
+  trackingCode    String?       @map("tracking_code") @db.VarChar(100)
+  carrierName     String?       @map("carrier_name") @db.VarChar(100)
+  dispatchedAt    DateTime?     @map("dispatched_at")
+  deliveredAt     DateTime?     @map("delivered_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  case            Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  contractId      String?                 @map("contract_id") @db.Uuid
+  contract        CaseCommercialContract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@map("orders")
+}
+
+// ============================================================================
+// 13. SESSÕES GERENCIÁVEIS (Revogação Imediata e Auditoria de Acesso)
+// ============================================================================
+model Session {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  membershipId   String       @map("membership_id") @db.Uuid
+  ipAddress      String?      @map("ip_address") @db.VarChar(45)
+  userAgent      String?      @map("user_agent") @db.VarChar(255)
+  isValid        Boolean      @default(true) @map("is_valid")
+  expiresAt      DateTime     @map("expires_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership     Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([membershipId])
+  @@map("sessions")
+}
+
+// ============================================================================
+// 14. CONTRATO COMERCIAL ÚNICO POR CASO E VERSÕES IMUTÁVEIS
+// ============================================================================
+model CaseCommercialContract {
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId                String            @unique @map("case_id") @db.Uuid
+  contractCode          String            @unique @map("contract_code") @db.VarChar(50)
+  versionNumber         Int               @default(1) @map("version_number")
+  status                String            @default("DRAFT") @db.VarChar(50)
+
+  packageName           String            @map("package_name") @db.VarChar(100)
+  contractedAligners    Int               @map("contracted_aligners")
+  totalPriceCents       Int               @map("total_price_cents")
+  currency              String            @default("BRL") @db.VarChar(10)
+
+  productionModel       String            @default("HYBRID") @map("production_model") @db.VarChar(50)
+  deliveryModel         String            @default("BATCHED") @map("delivery_model") @db.VarChar(50)
+
+  includedRefinements   Int               @default(0) @map("included_refinements")
+  refinementWindowDays  Int               @default(180) @map("refinement_window_days")
+  extraAlignerPriceCents Int              @default(0) @map("extra_aligner_price_cents")
+
+  commercialNotes       String?           @map("commercial_notes") @db.Text
+  confirmedById         String?           @map("confirmed_by_id") @db.Uuid
+  confirmedAt           DateTime?         @map("confirmed_at")
+
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  case                  Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  confirmedBy           User?             @relation("ConfirmedContracts", fields: [confirmedById], references: [id])
+  versions              ContractVersion[]
+  productionUnits       ProductionUnit[]
+  refinements           RefinementRequest[]
+  orders                Order[]
+
+  @@map("case_commercial_contracts")
+}
+
+model ContractVersion {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId            String                  @map("contract_id") @db.Uuid
+  versionNumber         Int                     @map("version_number")
+
+  contractedAligners    Int                     @map("contracted_aligners")
+  totalPriceCents       Int                     @map("total_price_cents")
+  productionModel       String                  @map("production_model") @db.VarChar(50)
+  deliveryModel         String                  @map("delivery_model") @db.VarChar(50)
+  includedRefinements   Int                     @map("included_refinements")
+  refinementWindowDays  Int                     @map("refinement_window_days")
+  extraAlignerPriceCents Int                    @map("extra_aligner_price_cents")
+
+  snapshotJson          String                  @map("snapshot_json") @db.Text
+  changeReason          String                  @map("change_reason") @db.VarChar(500)
+  changedById           String                  @map("changed_by_id") @db.Uuid
+  createdAt             DateTime                @default(now()) @map("created_at")
+
+  contract              CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  changedBy             User                    @relation("ContractVersionsChanged", fields: [changedById], references: [id])
+
+  @@unique([contractId, versionNumber])
+  @@index([contractId])
+  @@map("contract_versions")
+}
+
+// ============================================================================
+// 15. UNIDADES DE PRODUÇÃO (RASTREAMENTO HÍBRIDO: PARES E LOTES)
+// ============================================================================
+model ProductionUnit {
+  id                  String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId          String                  @map("contract_id") @db.Uuid
+  caseId              String                  @map("case_id") @db.Uuid
+  refinementRequestId String?                 @map("refinement_request_id") @db.Uuid
+
+  unitCode            String                  @map("unit_code") @db.VarChar(50)
+  type                String                  @default("BATCH") @db.VarChar(50)
+  quantityPairs       Int                     @map("quantity_pairs")
+  shippedQuantity     Int                     @default(0) @map("shipped_quantity")
+  stagesDescription   String                  @map("stages_description") @db.VarChar(255)
+
+  status              String                  @default("PENDING") @db.VarChar(50)
+
+  plannedStartDate    DateTime?               @map("planned_start_date")
+  plannedEndDate      DateTime?               @map("planned_end_date")
+  actualStartDate     DateTime?               @map("actual_start_date")
+  actualEndDate       DateTime?               @map("actual_end_date")
+
+  qcApprovedAt        DateTime?               @map("qc_approved_at")
+  qcApprovedById      String?                 @map("qc_approved_by_id") @db.Uuid
+  qcNotes             String?                 @map("qc_notes") @db.Text
+
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+
+  contract            CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  case                Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  refinement          RefinementRequest?      @relation(fields: [refinementRequestId], references: [id])
+  qcApprovedBy        User?                   @relation("QcApprovedUnits", fields: [qcApprovedById], references: [id])
+  shipmentItems       ShipmentItem[]
+
+  @@index([caseId])
+  @@index([contractId])
+  @@map("production_units")
+}
+
+// ============================================================================
+// 16. EXPEDIÇÃO FÍSICA E REMESSAS (ENTREGAS PARCIAIS COM INTEGRIDADE)
+// ============================================================================
+model Shipment {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId              String          @map("case_id") @db.Uuid
+  shipmentCode        String          @unique @map("shipment_code") @db.VarChar(50)
+  carrierName         String          @map("carrier_name") @db.VarChar(100)
+  trackingCode        String?         @map("tracking_code") @db.VarChar(100)
+  status              String          @default("PREPARING") @db.VarChar(50)
+
+  plannedDate         DateTime?       @map("planned_date")
+  shippedAt           DateTime?       @map("shipped_at")
+  deliveredAt         DateTime?       @map("delivered_at")
+
+  notes               String?         @db.Text
+  dispatchedById      String?         @map("dispatched_by_id") @db.Uuid
+  createdAt           DateTime        @default(now()) @map("created_at")
+
+  case                Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  dispatchedBy        User?           @relation("DispatchedShipments", fields: [dispatchedById], references: [id])
+  items               ShipmentItem[]
+
+  @@index([caseId])
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shipmentId          String          @map("shipment_id") @db.Uuid
+  productionUnitId    String          @map("production_unit_id") @db.Uuid
+  quantityShipped     Int             @map("quantity_shipped")
+
+  shipment            Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  productionUnit      ProductionUnit  @relation(fields: [productionUnitId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([productionUnitId])
+  @@map("shipment_items")
+}
+
+// ============================================================================
+// 17. REFINAMENTOS DESACOPLADOS (SEM DUPLICAR O CASO CLÍNICO)
+// ============================================================================
+model RefinementRequest {
+  id                          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId                      String                  @map("case_id") @db.Uuid
+  contractId                  String                  @map("contract_id") @db.Uuid
+  contractVersionUsed         Int                     @map("contract_version_used")
+  sequenceNumber              Int                     @map("sequence_number")
+
+  clinicalReason              String                  @map("clinical_reason") @db.Text
+  clinicalStatus              String                  @default("PENDING_DOCTOR_APPROVAL") @map("clinical_status") @db.VarChar(50)
+
+  isCoveredByContract         Boolean                 @default(true) @map("is_covered_by_contract")
+  extraAlignersCount          Int                     @default(0) @map("extra_aligners_count")
+  extraAmountChargedCents     Int                     @default(0) @map("extra_amount_charged_cents")
+  commercialStatus            String                  @default("APPROVED") @map("commercial_status") @db.VarChar(50)
+
+  requestedById               String                  @map("requested_by_id") @db.Uuid
+  clinicallyApprovedById      String?                 @map("clinically_approved_by_id") @db.Uuid
+  commerciallyApprovedById    String?                 @map("commercially_approved_by_id") @db.Uuid
+  clinicallyApprovedAt        DateTime?               @map("clinically_approved_at")
+  commerciallyApprovedAt      DateTime?               @map("commercially_approved_at")
+
+  createdAt                   DateTime                @default(now()) @map("created_at")
+  updatedAt                   DateTime                @updatedAt @map("updated_at")
+
+  case                        Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  contract                    CaseCommercialContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  requestedBy                 User                    @relation("RequestedRefinements", fields: [requestedById], references: [id])
+  clinicallyApprovedBy        User?                   @relation("ClinicallyApprovedRefinements", fields: [clinicallyApprovedById], references: [id])
+  commerciallyApprovedBy      User?                   @relation("CommerciallyApprovedRefinements", fields: [commerciallyApprovedById], references: [id])
+  productionUnits             ProductionUnit[]
+
+  @@unique([caseId, sequenceNumber])
+  @@index([caseId])
+  @@index([contractId])
+  @@map("refinement_requests")
+}
