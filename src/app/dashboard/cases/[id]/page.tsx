@@ -1,22 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import React from 'react';
+import { useParams } from 'next/navigation';
+import { PatientTreatment360View } from '@/components/patient360/PatientTreatment360View';
 
-export default function CaseDetailsRedirect() {
-  const router = useRouter();
+export default function Treatment360Page() {
   const params = useParams();
   const caseId = params.id as string;
 
-  useEffect(() => {
-    if (caseId) {
-      router.replace(`/dashboard/cases/${caseId}/upload`);
-    }
-  }, [caseId, router]);
-
-  return (
-    <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-muted)' }}>
-      Redirecionando para a documentação do caso...
-    </div>
-  );
+  return <PatientTreatment360View mode="TREATMENT" resourceId={caseId} />;
 }

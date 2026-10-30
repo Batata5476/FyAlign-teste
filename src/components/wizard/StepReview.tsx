@@ -126,17 +126,23 @@ export function StepReview({
 
         <div>
           <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '8px' }}>
-            Caso Clínico Submetido com Sucesso!
+            Pedido Inicial Submetido com Sucesso!
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '520px', margin: '0 auto' }}>
-            O caso <strong style={{ color: 'var(--cyan-primary)' }}>{draft.caseCode || 'FyAlign'}</strong> foi
-            encaminhado para a equipe de ortodontistas e planejadores 3D. Acompanhe a evolução na lista de casos.
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '560px', margin: '0 auto' }}>
+            O tratamento <strong style={{ color: 'var(--cyan-primary)' }}>{draft.caseCode || 'FyAlign'}</strong> gerou a{' '}
+            <strong>OS #1 — Pedido Inicial</strong> com prazo de até <strong>3 dias úteis</strong> para envio do Setup 3D.
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '14px', marginTop: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <a
-            href={draft.caseId ? `/dashboard/cases/${draft.caseId}` : '/dashboard/cases'}
+            href={
+              draft.patient.id
+                ? `/dashboard/patients/${draft.patient.id}`
+                : draft.caseId
+                ? `/dashboard/cases/${draft.caseId}`
+                : '/dashboard'
+            }
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -151,11 +157,11 @@ export function StepReview({
               boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
             }}
           >
-            <span>Ver Detalhes do Caso</span>
+            <span>Abrir Ficha 360° do Paciente</span>
             <ExternalLink size={16} />
           </a>
           <a
-            href="/dashboard/cases"
+            href="/dashboard"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -171,7 +177,7 @@ export function StepReview({
               boxShadow: 'var(--shadow-sm)',
             }}
           >
-            <span>Voltar aos Meus Casos</span>
+            <span>Voltar ao Painel de Tratamentos</span>
           </a>
         </div>
       </div>

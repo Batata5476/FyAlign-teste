@@ -148,6 +148,7 @@ model Organization {
   cases       Case[]
   auditLogs   AuditLog[]
   legacyUsers User[]             @relation("LegacyUserClinic")
+  externalLinks ExternalSystemLink[]
 
   @@map("organizations")
 }
@@ -191,6 +192,14 @@ model User {
   requestedRefinements          RefinementRequest[]      @relation("RequestedRefinements")
   clinicallyApprovedRefinements RefinementRequest[]      @relation("ClinicallyApprovedRefinements")
   commerciallyApprovedRefinements RefinementRequest[]    @relation("CommerciallyApprovedRefinements")
+
+  // Relações Operacionais Fase B (ServiceOrder, Eventos e Integrações Externas)
+  requestedServiceOrders        ServiceOrder[]           @relation("ServiceOrderRequestedBy")
+  verifiedDocsOrders            ServiceOrder[]           @relation("ServiceOrderDocsVerifiedBy")
+  nemoInsertedOrders            ServiceOrder[]           @relation("ServiceOrderNemoInsertedBy")
+  releasedProductionOrders      ServiceOrder[]           @relation("ServiceOrderReleasedBy")
+  recordedOperationalEvents     OperationalEvent[]       @relation("OperationalEventsRecordedBy")
+  createdExternalLinks          ExternalSystemLink[]     @relation("ExternalLinksCreatedBy")
 
   // Legado de compatibilidade durante migração
   role                UserRole?
@@ -331,6 +340,7 @@ model Patient {
 
   clinic      Organization @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   cases       Case[]
+  externalLinks ExternalSystemLink[]
 
   @@map("patients")
 }
@@ -385,6 +395,11 @@ model Case {
   productionUnits       ProductionUnit[]
   shipments             Shipment[]
   refinementRequests    RefinementRequest[]
+
+  // Relações Operacionais e Ficha 360° (Fase B — Matriz v2.0)
+  serviceOrders         ServiceOrder[]
+  operationalEvents     OperationalEvent[]
+  externalLinks         ExternalSystemLink[]
 
   @@map("cases")
 }
@@ -651,6 +666,10 @@ model CaseCommercialContract {
   refinementWindowDays  Int               @default(180) @map("refinement_window_days")
   extraAlignerPriceCents Int              @default(0) @map("extra_aligner_price_cents")
 
+  setupSlaBusinessDays  Int               @default(3) @map("setup_sla_business_days")
+  productionSlaDays     Int               @default(15) @map("production_sla_days")
+  productionSlaDayType  String            @default("CALENDAR_DAYS") @map("production_sla_day_type") @db.VarChar(50)
+
   commercialNotes       String?           @map("commercial_notes") @db.Text
   confirmedById         String?           @map("confirmed_by_id") @db.Uuid
   confirmedAt           DateTime?         @map("confirmed_at")
@@ -680,6 +699,9 @@ model ContractVersion {
   includedRefinements   Int                     @map("included_refinements")
   refinementWindowDays  Int                     @map("refinement_window_days")
   extraAlignerPriceCents Int                    @map("extra_aligner_price_cents")
+  setupSlaBusinessDays  Int                     @default(3) @map("setup_sla_business_days")
+  productionSlaDays     Int                     @default(15) @map("production_sla_days")
+  productionSlaDayType  String                  @default("CALENDAR_DAYS") @map("production_sla_day_type") @db.VarChar(50)
 
   snapshotJson          String                  @map("snapshot_json") @db.Text
   changeReason          String                  @map("change_reason") @db.VarChar(500)
@@ -808,9 +830,128 @@ model RefinementRequest {
   clinicallyApprovedBy        User?                   @relation("ClinicallyApprovedRefinements", fields: [clinicallyApprovedById], references: [id])
   commerciallyApprovedBy      User?                   @relation("CommerciallyApprovedRefinements", fields: [commerciallyApprovedById], references: [id])
   productionUnits             ProductionUnit[]
+  serviceOrders               ServiceOrder[]
 
   @@unique([caseId, sequenceNumber])
   @@index([caseId])
   @@index([contractId])
   @@map("refinement_requests")
+}
+
+// ============================================================================
+// 21. SOLICITAÇÕES OPERACIONAIS DO TRATAMENTO (OS: Pedido Inicial, 2ª Leva, Refinamento)
+// ============================================================================
+model ServiceOrder {
+  id                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId                 String             @map("case_id") @db.Uuid
+  orderNumber            String             @unique @map("order_number") @db.VarChar(50)
+  sequenceNumber         Int                @default(1) @map("sequence_number")
+  type                   String             @db.VarChar(50)
+  status                 String             @default("RECEIVED") @db.VarChar(50)
+
+  title                  String             @db.VarChar(255)
+  alignerRangeStart      Int?               @map("aligner_range_start")
+  alignerRangeEnd        Int?               @map("aligner_range_end")
+  requiresNewBudget      Boolean            @default(true) @map("requires_new_budget")
+
+  nemoStatus             String             @default("PENDING") @map("nemo_status") @db.VarChar(50)
+  nemoCaseId             String?            @map("nemo_case_id") @db.VarChar(100)
+  nemoInsertedAt         DateTime?          @map("nemo_inserted_at")
+  nemoInsertedById       String?            @map("nemo_inserted_by_id") @db.Uuid
+  nemoNotes              String?            @map("nemo_notes") @db.Text
+
+  docsVerifiedAt         DateTime?          @map("docs_verified_at")
+  docsVerifiedById       String?            @map("docs_verified_by_id") @db.Uuid
+  docsPendingReason      String?            @map("docs_pending_reason") @db.Text
+  productionReleasedAt   DateTime?          @map("production_released_at")
+  productionReleasedById String?            @map("production_released_by_id") @db.Uuid
+
+  receivedAt             DateTime?          @map("received_at")
+  setupDueAt             DateTime?          @map("setup_due_at")
+  setupSentAt            DateTime?          @map("setup_sent_at")
+  approvedAt             DateTime?          @map("approved_at")
+  productionDueAt        DateTime?          @map("production_due_at")
+  scheduledPrepAt        DateTime?          @map("scheduled_prep_at")
+  completedAt            DateTime?          @map("completed_at")
+
+  refinementRequestId    String?            @map("refinement_request_id") @db.Uuid
+  requestedById          String?            @map("requested_by_id") @db.Uuid
+  notes                  String?            @db.Text
+
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  case                   Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  refinementRequest      RefinementRequest? @relation(fields: [refinementRequestId], references: [id], onDelete: SetNull)
+  requestedBy            User?              @relation("ServiceOrderRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  docsVerifiedBy         User?              @relation("ServiceOrderDocsVerifiedBy", fields: [docsVerifiedById], references: [id], onDelete: SetNull)
+  nemoInsertedBy         User?              @relation("ServiceOrderNemoInsertedBy", fields: [nemoInsertedById], references: [id], onDelete: SetNull)
+  productionReleasedBy   User?              @relation("ServiceOrderReleasedBy", fields: [productionReleasedById], references: [id], onDelete: SetNull)
+  operationalEvents      OperationalEvent[]
+  externalLinks          ExternalSystemLink[]
+
+  @@index([caseId])
+  @@index([type, status])
+  @@map("service_orders")
+}
+
+// ============================================================================
+// 22. MARCOS DE COMUNICAÇÃO & EVENTOS OPERACIONAIS (WhatsApp, Portal e Lab)
+// ============================================================================
+model OperationalEvent {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId          String        @map("case_id") @db.Uuid
+  serviceOrderId  String?       @map("service_order_id") @db.Uuid
+  eventType       String        @map("event_type") @db.VarChar(80)
+  channel         String        @default("PORTAL") @db.VarChar(50)
+  summary         String        @db.VarChar(500)
+  details         String?       @db.Text
+  isInternalOnly  Boolean       @default(false) @map("is_internal_only")
+  recordedById    String        @map("recorded_by_id") @db.Uuid
+  occurredAt      DateTime      @default(now()) @map("occurred_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  case            Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
+  recordedBy      User          @relation("OperationalEventsRecordedBy", fields: [recordedById], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([serviceOrderId])
+  @@map("operational_events")
+}
+
+// ============================================================================
+// 23. VÍNCULOS COM SISTEMAS EXTERNOS DESACOPLADOS (B-INT01 — Ficha 360°)
+// ============================================================================
+model ExternalSystemLink {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  patientId       String?       @map("patient_id") @db.Uuid
+  caseId          String?       @map("case_id") @db.Uuid
+  serviceOrderId  String?       @map("service_order_id") @db.Uuid
+
+  entityType      String        @map("entity_type") @db.VarChar(50)
+  provider        String        @db.VarChar(80)
+  externalId      String        @map("external_id") @db.VarChar(255)
+  secondaryCode   String?       @map("secondary_code") @db.VarChar(255)
+  externalUrl     String?       @map("external_url") @db.VarChar(1000)
+  syncStatus      String        @default("LINKED") @map("sync_status") @db.VarChar(50)
+  metadataJson    String?       @map("metadata_json") @db.Text
+  lastSyncedAt    DateTime?     @map("last_synced_at")
+  createdById     String?       @map("created_by_id") @db.Uuid
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient         Patient?      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  case            Case?         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  createdBy       User?         @relation("ExternalLinksCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([caseId])
+  @@index([serviceOrderId])
+  @@map("external_system_links")
 }

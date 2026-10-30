@@ -232,6 +232,10 @@ async function runRbacIntegrityAudit() {
 
   const clinicRoles: UserRole[] = [ROLES.CLINIC_ADMIN, ROLES.DOCTOR, ROLES.CLINIC_ASSISTANT];
   const forbiddenForClinic: Permission[] = [
+    'DOC_VERIFY',
+    'NEMO_MANAGE',
+    'PRODUCTION_RELEASE',
+    'COMMERCIAL_COMMUNICATE',
     'PRODUCTION_READ',
     'PRODUCTION_UPDATE',
     'PRODUCTION_UNIT_MANAGE',

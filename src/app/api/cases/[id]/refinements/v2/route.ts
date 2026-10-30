@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
 import { CreateRefinementSchema } from '@/lib/types/production';
+import { buildServiceOrderNumber, calculateSetupDueAt } from '@/lib/sla/treatment-sla';
 import { z } from 'zod';
 
 export async function GET(
@@ -110,6 +111,7 @@ export async function POST(
     }
 
     const refinement = await prisma.$transaction(async (tx) => {
+      const now = new Date();
       const created = await tx.refinementRequest.create({
         data: {
           caseId,
@@ -124,7 +126,26 @@ export async function POST(
           commercialStatus,
           requestedById: sessionUser.userId,
           clinicallyApprovedById: sessionUser.userId,
-          clinicallyApprovedAt: new Date(),
+          clinicallyApprovedAt: now,
+        },
+      });
+
+      const orderCount = await tx.serviceOrder.count({ where: { caseId } });
+      await tx.serviceOrder.create({
+        data: {
+          caseId,
+          orderNumber: buildServiceOrderNumber(orderCount + 1, now),
+          sequenceNumber: orderCount + 1,
+          type: 'REFINEMENT',
+          status: 'RECEIVED',
+          title: `Refinamento #${sequenceNumber}${isCoveredByContract ? ' (Franquia Contratual)' : ' (Extra-Franquia)'}`,
+          requiresNewBudget: !isCoveredByContract && extraAmountChargedCents > 0,
+          nemoStatus: 'PENDING',
+          receivedAt: now,
+          setupDueAt: calculateSetupDueAt(now, contract.setupSlaBusinessDays || 3),
+          refinementRequestId: created.id,
+          requestedById: sessionUser.userId,
+          notes: data.clinicalReason,
         },
       });
 

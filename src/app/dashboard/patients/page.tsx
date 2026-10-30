@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, UserPlus, Search, FolderPlus, ArrowLeft, ShieldCheck, Check, X } from 'lucide-react';
+import { Users, UserPlus, Search, FolderPlus, ArrowUpRight, Link2, Check, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 
 export default function PatientsPage() {
@@ -144,60 +144,97 @@ export default function PatientsPage() {
               <thead>
                 <tr>
                   <th>Nome Completo</th>
-                  <th>Gênero</th>
+                  <th>Vínculo Clínica (ERP)</th>
                   <th>Nascimento</th>
                   <th>Contato</th>
                   <th>TCLE Consentimento</th>
-                  <th>Casos Registrados</th>
-                  <th style={{ textAlign: 'right' }}>Ação</th>
+                  <th>Tratamentos</th>
+                  <th style={{ textAlign: 'right' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredPatients.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <strong style={{ color: 'var(--text-main)' }}>{p.fullName}</strong>
-                      {p.email && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{p.email}</div>}
-                    </td>
-                    <td>{p.gender}</td>
-                    <td>{new Date(p.birthDate).toLocaleDateString('pt-BR')}</td>
-                    <td>{p.phone}</td>
-                    <td>
-                      {p.tcleSigned ? (
-                        <span className="badge badge-approved" style={{ fontSize: '0.7rem' }}>
-                          <Check size={11} /> Assinado
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--amber-warning)' }}>
-                          Pendente
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {p.cases?.length > 0 ? (
-                        <span style={{ color: 'var(--cyan-primary)', fontWeight: 600, fontSize: '0.85rem' }}>
-                          {p.cases.length} caso(s)
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Sem casos</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {can('CASE_CREATE') ? (
-                        <button
-                          onClick={() => router.push('/dashboard/cases/new')}
-                          className="btn-secondary"
-                          style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                        >
-                          <FolderPlus size={14} />
-                          <span>Novo Caso</span>
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)' }}>Consulta</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {filteredPatients.map((p) => {
+                  const erpLink = (p.externalLinks || []).find((l: any) =>
+                    ['CLINICORP', 'SIMPLES_DENTAL', 'DENTAL_OFFICE', 'OTHER'].includes(l.provider)
+                  );
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => router.push(`/dashboard/patients/${p.id}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>
+                        <strong style={{ color: 'var(--text-main)' }}>{p.fullName}</strong>
+                        {p.email && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{p.email}</div>}
+                      </td>
+                      <td>
+                        {erpLink ? (
+                          <span
+                            style={{
+                              fontSize: '0.74rem',
+                              padding: '3px 8px',
+                              borderRadius: '999px',
+                              background: 'rgba(59, 130, 246, 0.14)',
+                              color: '#93c5fd',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                            }}
+                          >
+                            <Link2 size={11} />
+                            {erpLink.provider} #{erpLink.externalId}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)' }}>Não vinculado</span>
+                        )}
+                      </td>
+                      <td>{new Date(p.birthDate).toLocaleDateString('pt-BR')}</td>
+                      <td>{p.phone}</td>
+                      <td>
+                        {p.tcleSigned ? (
+                          <span className="badge badge-approved" style={{ fontSize: '0.7rem' }}>
+                            <Check size={11} /> Assinado
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--amber-warning)' }}>
+                            Pendente
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {p.cases?.length > 0 ? (
+                          <span style={{ color: 'var(--cyan-primary)', fontWeight: 600, fontSize: '0.85rem' }}>
+                            {p.cases.length} tratamento(s)
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Sem tratamentos</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'inline-flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => router.push(`/dashboard/patients/${p.id}`)}
+                            className="btn-primary"
+                            style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                          >
+                            <span>Ficha 360°</span>
+                            <ArrowUpRight size={13} />
+                          </button>
+                          {can('CASE_CREATE') && (
+                            <button
+                              onClick={() => router.push(`/dashboard/cases/new?patientId=${p.id}`)}
+                              className="btn-secondary"
+                              style={{ fontSize: '0.78rem', padding: '6px 10px' }}
+                              title="Iniciar Pedido Inicial para este paciente"
+                            >
+                              <FolderPlus size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

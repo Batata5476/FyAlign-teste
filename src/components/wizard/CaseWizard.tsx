@@ -148,10 +148,14 @@ export function CaseWizard() {
           }
         }
 
-        // Verifica caseId na URL ou no LocalStorage (F5 Resilience)
+        // Verifica patientId pré-selecionado (vindo da Ficha 360° ou lista de Pacientes) ou caseId na URL / LocalStorage
         const params = new URLSearchParams(window.location.search);
-        const urlCaseId = params.get('caseId') || params.get('id') || localStorage.getItem(STORAGE_DRAFT_KEY);
-        const urlStep = parseInt(params.get('step') || '1', 10) as WizardStepNumber;
+        const urlPatientId = params.get('patientId');
+        const urlCaseId =
+          params.get('caseId') ||
+          params.get('id') ||
+          (urlPatientId ? null : localStorage.getItem(STORAGE_DRAFT_KEY));
+        const urlStep = parseInt(params.get('step') || '2', 10) as WizardStepNumber;
 
         let loadedCase: any = null;
         let loadedFilesMap = buildInitialFilesMap();
@@ -276,12 +280,48 @@ export function CaseWizard() {
 
           setMaxReachedStep(Math.max(reached, targetStep) as WizardStepNumber);
           updateUrlParams(loadedCase.id, targetStep);
+        } else if (urlPatientId) {
+          // Fluxo contextualizado de Pedido Inicial a partir da Ficha 360° do Paciente
+          let preloadedPatient: PatientFormData | null = null;
+          try {
+            const pRes = await fetch(`/api/patients/${urlPatientId}`);
+            if (pRes.ok) {
+              const pJson = await pRes.json();
+              if (pJson.patient) {
+                const p = pJson.patient;
+                preloadedPatient = {
+                  id: p.id,
+                  isNew: false,
+                  fullName: p.fullName || '',
+                  birthDate: p.birthDate || '',
+                  gender: p.gender || '',
+                  phone: p.phone || '',
+                  email: p.email || '',
+                  patientCode: `PAC-${p.id.replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase()}`,
+                  clinicName: profInfo?.clinicName,
+                };
+              }
+            }
+          } catch (e) {
+            console.warn('Falha ao pré-carregar paciente na OS inicial:', e);
+          }
+
+          setDraft((prev) => ({
+            ...prev,
+            step: 2,
+            professional: profInfo,
+            patient: preloadedPatient || prev.patient,
+            files: loadedFilesMap,
+          }));
+          setMaxReachedStep(2);
         } else {
           setDraft((prev) => ({
             ...prev,
+            step: 2,
             professional: profInfo,
             files: loadedFilesMap,
           }));
+          setMaxReachedStep(2);
         }
       } catch (err) {
         console.error('Falha ao inicializar wizard:', err);
@@ -561,7 +601,7 @@ export function CaseWizard() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Novo Caso Clínico FyAlign
+              Novo Tratamento — Pedido Inicial
             </h1>
             {draft.caseCode && (
               <span

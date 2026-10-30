@@ -157,10 +157,10 @@ export default function DashboardPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
         <div>
           <h1 style={{ fontSize: '1.9rem', fontWeight: 700, marginBottom: '6px' }}>
-            Painel de Casos Clínicos
+            Painel de Tratamentos Ortodônticos
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
-            Acompanhe o planejamento ortodôntico e a produção de alinhadores dos seus pacientes.
+            Acompanhe solicitações (Pedido Inicial, Segunda Leva e Refinamentos), prazos e Ficha 360° dos pacientes.
           </p>
         </div>
 
@@ -171,7 +171,7 @@ export default function DashboardPage() {
             style={{ padding: '12px 22px' }}
           >
             <FolderPlus size={18} />
-            <span>+ Novo Caso Clínico</span>
+            <span>+ Novo Pedido Inicial</span>
           </button>
         )}
       </div>
@@ -314,7 +314,17 @@ export default function DashboardPage() {
                         {c.caseCode}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                        <div
+                          onClick={() => {
+                            if (can('PATIENT_READ') && c.patient?.id) {
+                              router.push(`/dashboard/patients/${c.patient.id}`);
+                            } else {
+                              router.push(`/dashboard/cases/${c.id}`);
+                            }
+                          }}
+                          style={{ fontWeight: 600, color: 'var(--text-main)', cursor: 'pointer' }}
+                          title="Abrir Ficha 360°"
+                        >
                           {c.patient?.fullName}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -353,11 +363,17 @@ export default function DashboardPage() {
                           </button>
                         ) : (
                           <button
-                            onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                            onClick={() =>
+                              router.push(
+                                can('PATIENT_READ') && c.patient?.id
+                                  ? `/dashboard/patients/${c.patient.id}`
+                                  : `/dashboard/cases/${c.id}`
+                              )
+                            }
                             className="btn-secondary"
                             style={{ fontSize: '0.8rem', padding: '6px 14px' }}
                           >
-                            <span>Visualizar Caso</span>
+                            <span>Abrir Visão 360°</span>
                           </button>
                         )}
                       </td>

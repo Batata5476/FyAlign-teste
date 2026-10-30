@@ -123,9 +123,9 @@ export default function DashboardLayout({
     {
       title: 'Clínico & Pacientes',
       items: [
-        { label: 'Painel de Casos', href: '/dashboard', icon: LayoutDashboard, permission: 'CASE_READ' },
-        { label: 'Novo Caso Clínico', href: '/dashboard/cases/new', icon: FolderPlus, permission: 'CASE_CREATE' },
-        { label: 'Pacientes', href: '/dashboard/patients', icon: Users, permission: 'PATIENT_READ' },
+        { label: 'Painel de Tratamentos', href: '/dashboard', icon: LayoutDashboard, permission: 'CASE_READ' },
+        { label: 'Novo Pedido Inicial', href: '/dashboard/cases/new', icon: FolderPlus, permission: 'CASE_CREATE' },
+        { label: 'Pacientes (Ficha 360°)', href: '/dashboard/patients', icon: Users, permission: 'PATIENT_READ' },
         { label: 'Setups Virtuais 3D', href: '/dashboard/setups', icon: Box, permission: 'SETUP_READ' },
         { label: 'Equipe da Clínica', href: '/dashboard/team', icon: UserCheck, permission: 'TEAM_READ' },
       ],

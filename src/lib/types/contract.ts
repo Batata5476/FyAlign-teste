@@ -24,6 +24,14 @@ export const DELIVERY_MODEL = {
 
 export type DeliveryModel = (typeof DELIVERY_MODEL)[keyof typeof DELIVERY_MODEL];
 
+export const CONTRACT_SLA_DAY_TYPE = {
+  CALENDAR_DAYS: 'CALENDAR_DAYS',
+  BUSINESS_DAYS: 'BUSINESS_DAYS',
+} as const;
+
+export type ContractSlaDayType =
+  (typeof CONTRACT_SLA_DAY_TYPE)[keyof typeof CONTRACT_SLA_DAY_TYPE];
+
 export const CreateContractSchema = z.object({
   packageName: z.string().min(2, 'Nome do pacote obrigatório'),
   contractedAligners: z.number().int().positive('Quantidade de pares deve ser maior que zero'),
@@ -34,6 +42,9 @@ export const CreateContractSchema = z.object({
   includedRefinements: z.number().int().min(0).default(0),
   refinementWindowDays: z.number().int().positive().default(180),
   extraAlignerPriceCents: z.number().int().nonnegative().default(0),
+  setupSlaBusinessDays: z.number().int().positive().default(3),
+  productionSlaDays: z.number().int().positive().default(15),
+  productionSlaDayType: z.nativeEnum(CONTRACT_SLA_DAY_TYPE).default('CALENDAR_DAYS'),
   commercialNotes: z.string().optional().nullable(),
 });
 
@@ -48,6 +59,9 @@ export const AmendContractSchema = z.object({
   includedRefinements: z.number().int().min(0).optional(),
   refinementWindowDays: z.number().int().positive().optional(),
   extraAlignerPriceCents: z.number().int().nonnegative().optional(),
+  setupSlaBusinessDays: z.number().int().positive().optional(),
+  productionSlaDays: z.number().int().positive().optional(),
+  productionSlaDayType: z.nativeEnum(CONTRACT_SLA_DAY_TYPE).optional(),
   commercialNotes: z.string().optional().nullable(),
 });
 

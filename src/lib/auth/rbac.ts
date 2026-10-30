@@ -148,6 +148,7 @@ export const PERMISSIONS = {
     ROLES.CLINIC_ASSISTANT,
   ],
   FILE_DELETE: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN, ROLES.DOCTOR],
+  DOC_VERIFY: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
 
   // 5.4 Setups Virtuais 3D
   SETUP_READ: [
@@ -189,6 +190,8 @@ export const PERMISSIONS = {
   ],
   PRODUCTION_UNIT_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
   SCHEDULE_UPDATE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
+  NEMO_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D, ROLES.PRODUCTION_QC],
+  PRODUCTION_RELEASE: [ROLES.SUPER_ADMIN, ROLES.PLANNER_3D],
 
   // 5.7 Controle de Qualidade (QC)
   QC_READ: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
@@ -204,12 +207,12 @@ export const PERMISSIONS = {
     ROLES.DOCTOR,
     ROLES.CLINIC_ASSISTANT,
   ],
-  SHIPMENT_CREATE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
-  SHIPMENT_DISPATCH: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+  SHIPMENT_CREATE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
+  SHIPMENT_DISPATCH: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
   SHIPMENT_DELIVERY_CONFIRM: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
-  DISPATCH_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+  DISPATCH_MANAGE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
 
-  // 5.9 Contratos Comerciais, Ordens e Faturamento B2B
+  // 5.9 Contratos Comerciais, Ordens, Comunicação Comercial e Faturamento B2B
   CONTRACT_READ: [
     ROLES.SUPER_ADMIN,
     ROLES.FINANCE,
@@ -217,9 +220,10 @@ export const PERMISSIONS = {
     ROLES.CLINIC_ADMIN,
     ROLES.DOCTOR,
   ],
-  CONTRACT_CREATE: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  CONTRACT_CREATE: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.SUPPORT],
   CONTRACT_CONFIRM: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
   CONTRACT_AMEND: [ROLES.SUPER_ADMIN, ROLES.FINANCE],
+  COMMERCIAL_COMMUNICATE: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.SUPPORT],
   ORDER_READ: [
     ROLES.SUPER_ADMIN,
     ROLES.FINANCE,
@@ -287,7 +291,7 @@ export const PERMISSIONS = {
     ROLES.CLINIC_ASSISTANT,
   ],
   UPDATE_PRODUCTION_STATUS: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
-  DISPATCH_CASE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC],
+  DISPATCH_CASE: [ROLES.SUPER_ADMIN, ROLES.PRODUCTION_QC, ROLES.SUPPORT],
   MANAGE_CLINIC_TEAM: [ROLES.SUPER_ADMIN, ROLES.CLINIC_ADMIN],
   VIEW_BILLING: [ROLES.SUPER_ADMIN, ROLES.FINANCE, ROLES.CLINIC_ADMIN],
 } as const;
@@ -368,6 +372,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       { key: 'FILE_UPLOAD', label: 'Enviar Arquivos', description: 'Fazer upload de exames nos 13 slots clínicos' },
       { key: 'FILE_DOWNLOAD', label: 'Baixar Arquivos', description: 'Descarregar arquivos originais do prontuário' },
       { key: 'FILE_DELETE', label: 'Excluir Arquivos', description: 'Remover ou substituir exames anexados em rascunho' },
+      { key: 'DOC_VERIFY', label: 'Conferir Documentação (Lab)', description: 'Validar conformidade ou apontar pendência nos exames recebidos' },
     ],
   },
   {
@@ -414,6 +419,8 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       { key: 'PRODUCTION_UNIT_READ', label: 'Visualizar Lotes de Produção', description: 'Acompanhar progresso dos lotes contratados' },
       { key: 'PRODUCTION_UNIT_MANAGE', label: 'Gerenciar Lotes de Produção', description: 'Criar e organizar unidades/lotes na manufatura' },
       { key: 'SCHEDULE_UPDATE', label: 'Ajustar Cronograma Fabril', description: 'Reprogramar datas previstas de entrega de lotes' },
+      { key: 'NEMO_MANAGE', label: 'Gerenciar Inserção Nemo / CAD', description: 'Registrar status, ID do caso e sincronização no Nemo/NemoCast' },
+      { key: 'PRODUCTION_RELEASE', label: 'Liberar Produção Tecnicamente', description: 'Autorizar liberação técnica de solicitações para manufatura' },
     ],
   },
   {
@@ -447,6 +454,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       { key: 'CONTRACT_CREATE', label: 'Criar Proposta Contratual', description: 'Emitir contrato comercial inicial em centavos' },
       { key: 'CONTRACT_CONFIRM', label: 'Confirmar Contrato Comercial', description: 'Homologar contrato para liberar gatilho comercial de produção' },
       { key: 'CONTRACT_AMEND', label: 'Emitir Aditivos Contratuais', description: 'Versionar alterações de pares ou valores acordados' },
+      { key: 'COMMERCIAL_COMMUNICATE', label: 'Comunicação Comercial & WhatsApp', description: 'Registrar envio de setup/orçamento e acompanhamento comercial' },
       { key: 'ORDER_READ', label: 'Visualizar Pedidos (OP)', description: 'Consultar ordens de compra e status financeiro' },
       { key: 'ORDER_CREATE', label: 'Emitir Pedidos', description: 'Gerar ordens vinculadas aos casos aprovados' },
       { key: 'BILLING_READ', label: 'Visualizar Faturas', description: 'Consultar extrato de cobrança e boletos da organização' },

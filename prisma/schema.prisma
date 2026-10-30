@@ -31,6 +31,7 @@ model Organization {
   cases       Case[]
   auditLogs   AuditLog[]
   legacyUsers User[]       @relation("LegacyUserClinic")
+  externalLinks ExternalSystemLink[]
 }
 
 // ============================================================================
@@ -72,6 +73,14 @@ model User {
   requestedRefinements          RefinementRequest[]      @relation("RequestedRefinements")
   clinicallyApprovedRefinements RefinementRequest[]      @relation("ClinicallyApprovedRefinements")
   commerciallyApprovedRefinements RefinementRequest[]    @relation("CommerciallyApprovedRefinements")
+
+  // Relações Operacionais Fase B (ServiceOrder, Eventos e Integrações Externas)
+  requestedServiceOrders        ServiceOrder[]           @relation("ServiceOrderRequestedBy")
+  verifiedDocsOrders            ServiceOrder[]           @relation("ServiceOrderDocsVerifiedBy")
+  nemoInsertedOrders            ServiceOrder[]           @relation("ServiceOrderNemoInsertedBy")
+  releasedProductionOrders      ServiceOrder[]           @relation("ServiceOrderReleasedBy")
+  recordedOperationalEvents     OperationalEvent[]       @relation("OperationalEventsRecordedBy")
+  createdExternalLinks          ExternalSystemLink[]     @relation("ExternalLinksCreatedBy")
 
   // Campos de compatibilidade durante migração gradual (Fase 1 -> 3)
   role                String?
@@ -205,6 +214,7 @@ model Patient {
 
   clinic      Organization @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   cases       Case[]
+  externalLinks ExternalSystemLink[]
 }
 
 // ============================================================================
@@ -257,6 +267,11 @@ model Case {
   productionUnits       ProductionUnit[]
   shipments             Shipment[]
   refinementRequests    RefinementRequest[]
+
+  // Relações Operacionais e Ficha 360° (Fase B — Matriz v2.0)
+  serviceOrders         ServiceOrder[]
+  operationalEvents     OperationalEvent[]
+  externalLinks         ExternalSystemLink[]
 }
 
 // ============================================================================
@@ -505,6 +520,11 @@ model CaseCommercialContract {
   refinementWindowDays  Int               @default(180)  // Janela em dias para solicitar
   extraAlignerPriceCents Int              @default(0)    // Custo em centavos por par excedente
 
+  // Regras de Prazo (SLAs Configuráveis por Contrato/Plano — Fase B)
+  setupSlaBusinessDays  Int               @default(3)
+  productionSlaDays     Int               @default(15)
+  productionSlaDayType  String            @default("CALENDAR_DAYS") // CALENDAR_DAYS, BUSINESS_DAYS
+
   commercialNotes       String?
   confirmedById         String?
   confirmedAt           DateTime?
@@ -532,6 +552,9 @@ model ContractVersion {
   includedRefinements   Int
   refinementWindowDays  Int
   extraAlignerPriceCents Int
+  setupSlaBusinessDays  Int                     @default(3)
+  productionSlaDays     Int                     @default(15)
+  productionSlaDayType  String                  @default("CALENDAR_DAYS")
 
   snapshotJson          String                  // Cópia serializada integral (incluindo cronograma)
   changeReason          String                  // Justificativa obrigatória da alteração
@@ -660,8 +683,129 @@ model RefinementRequest {
   clinicallyApprovedBy        User?                   @relation("ClinicallyApprovedRefinements", fields: [clinicallyApprovedById], references: [id])
   commerciallyApprovedBy      User?                   @relation("CommerciallyApprovedRefinements", fields: [commerciallyApprovedById], references: [id])
   productionUnits             ProductionUnit[]
+  serviceOrders               ServiceOrder[]
 
   @@unique([caseId, sequenceNumber])
   @@index([caseId])
   @@index([contractId])
+}
+
+// ============================================================================
+// 21. SOLICITAÇÕES OPERACIONAIS DO TRATAMENTO (OS: Pedido Inicial, 2ª Leva, Refinamento)
+// ============================================================================
+model ServiceOrder {
+  id                     String             @id @default(uuid())
+  caseId                 String
+  orderNumber            String             @unique // Ex: "OS-2026-0001"
+  sequenceNumber         Int                @default(1)
+  type                   String             // INITIAL, SECOND_BATCH, REFINEMENT
+  status                 String             @default("RECEIVED")
+  // INITIAL/REFINEMENT: DRAFT, RECEIVED, IN_REVIEW, PENDING_DOCS, DOCS_VERIFIED, IN_PLANNING, SETUP_READY, WAITING_APPROVAL, WAITING_PAYMENT, RELEASED_FOR_PRODUCTION, IN_PRODUCTION, READY_TO_SHIP, SHIPPED, DELIVERED, CANCELLED
+  // SECOND_BATCH: SCHEDULED, RELEASED_FOR_PRODUCTION, IN_PRODUCTION, READY_TO_SHIP, SHIPPED, DELIVERED, CANCELLED
+
+  title                  String
+  alignerRangeStart      Int?
+  alignerRangeEnd        Int?
+  requiresNewBudget      Boolean            @default(true)
+
+  // Marco Operacional Nemo / NemoCast (B-INT01 Prioridade 1)
+  nemoStatus             String             @default("PENDING") // NOT_REQUIRED, PENDING, INSERTED, ERROR
+  nemoCaseId             String?
+  nemoInsertedAt         DateTime?
+  nemoInsertedById       String?
+  nemoNotes              String?
+
+  // Conferência Documental & Liberação Técnica
+  docsVerifiedAt         DateTime?
+  docsVerifiedById       String?
+  docsPendingReason      String?
+  productionReleasedAt   DateTime?
+  productionReleasedById String?
+
+  // Prazos Operacionais (SLAs da Matriz v2.0)
+  receivedAt             DateTime?
+  setupDueAt             DateTime?
+  setupSentAt            DateTime?
+  approvedAt             DateTime?
+  productionDueAt        DateTime?
+  scheduledPrepAt        DateTime?
+  completedAt            DateTime?
+
+  refinementRequestId    String?
+  requestedById          String?
+  notes                  String?
+
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  case                   Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  refinementRequest      RefinementRequest? @relation(fields: [refinementRequestId], references: [id], onDelete: SetNull)
+  requestedBy            User?              @relation("ServiceOrderRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  docsVerifiedBy         User?              @relation("ServiceOrderDocsVerifiedBy", fields: [docsVerifiedById], references: [id], onDelete: SetNull)
+  nemoInsertedBy         User?              @relation("ServiceOrderNemoInsertedBy", fields: [nemoInsertedById], references: [id], onDelete: SetNull)
+  productionReleasedBy   User?              @relation("ServiceOrderReleasedBy", fields: [productionReleasedById], references: [id], onDelete: SetNull)
+  operationalEvents      OperationalEvent[]
+  externalLinks          ExternalSystemLink[]
+
+  @@index([caseId])
+  @@index([type, status])
+}
+
+// ============================================================================
+// 22. MARCOS DE COMUNICAÇÃO & EVENTOS OPERACIONAIS (WhatsApp, Portal e Lab)
+// ============================================================================
+model OperationalEvent {
+  id              String        @id @default(uuid())
+  caseId          String
+  serviceOrderId  String?
+  eventType       String        // SETUP_SENT, BUDGET_SENT, CLIENT_APPROVAL_RECORDED, DOCS_ISSUE_REPORTED, NEMO_UPDATED, SECOND_BATCH_TRIGGERED, SHIPMENT_NOTIFIED, COMMERCIAL_NOTE
+  channel         String        @default("PORTAL") // WHATSAPP, PORTAL, PHONE, EMAIL, INTERNAL
+  summary         String
+  details         String?
+  isInternalOnly  Boolean       @default(false)
+  recordedById    String
+  occurredAt      DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+
+  case            Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
+  recordedBy      User          @relation("OperationalEventsRecordedBy", fields: [recordedById], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([serviceOrderId])
+}
+
+// ============================================================================
+// 23. VÍNCULOS COM SISTEMAS EXTERNOS DESACOPLADOS (B-INT01 — Ficha 360°)
+// ============================================================================
+model ExternalSystemLink {
+  id              String        @id @default(uuid())
+  organizationId  String
+  patientId       String?
+  caseId          String?
+  serviceOrderId  String?
+
+  entityType      String        // PATIENT, TREATMENT, SERVICE_ORDER, SHIPMENT, DOCUMENTATION, CONTRACT
+  provider        String        // NEMO, CLINICORP, SIMPLES_DENTAL, DENTAL_OFFICE, CORREIOS, MELHOR_ENVIO, LOGGI, WHATSAPP, ITERO, MEDIT_LINK, SHAPES_3, IDOC, OTHER
+  externalId      String
+  secondaryCode   String?
+  externalUrl     String?
+  syncStatus      String        @default("LINKED") // MANUAL, LINKED, SYNCED, PENDING, ERROR
+  metadataJson    String?       // JSON string enxuto (ex: agenda, operador, observação de sync)
+  lastSyncedAt    DateTime?
+  createdById     String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient         Patient?      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  case            Case?         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  serviceOrder    ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  createdBy       User?         @relation("ExternalLinksCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([patientId])
+  @@index([caseId])
+  @@index([serviceOrderId])
 }

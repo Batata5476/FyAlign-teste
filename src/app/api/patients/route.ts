@@ -52,6 +52,9 @@ export async function GET(req: NextRequest) {
           tradeName: true,
         },
       },
+      externalLinks: {
+        orderBy: { updatedAt: 'desc' },
+      },
       cases: {
         select: {
           id: true,

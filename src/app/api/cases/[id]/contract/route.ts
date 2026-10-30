@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
 import { hasCommercialAuthority } from '@/lib/auth/rbac';
 import { CreateContractSchema } from '@/lib/types/contract';
+import { calculateProductionDueAt } from '@/lib/sla/treatment-sla';
 import { z } from 'zod';
 
 export async function GET(
@@ -96,6 +97,9 @@ export async function POST(
         includedRefinements: data.includedRefinements,
         refinementWindowDays: data.refinementWindowDays,
         extraAlignerPriceCents: data.extraAlignerPriceCents,
+        setupSlaBusinessDays: data.setupSlaBusinessDays,
+        productionSlaDays: data.productionSlaDays,
+        productionSlaDayType: data.productionSlaDayType,
         commercialNotes: data.commercialNotes || null,
         status: 'DRAFT',
       },
@@ -198,19 +202,46 @@ export async function PATCH(
         includedRefinements: currentContract.includedRefinements,
         refinementWindowDays: currentContract.refinementWindowDays,
         extraAlignerPriceCents: currentContract.extraAlignerPriceCents,
+        setupSlaBusinessDays: currentContract.setupSlaBusinessDays,
+        productionSlaDays: currentContract.productionSlaDays,
+        productionSlaDayType: currentContract.productionSlaDayType,
         snapshotJson,
         changeReason: 'Confirmação comercial inicial do contrato.',
         changedById: sessionUser.userId,
       },
     });
 
-    // 3. Gatilho de Produção: Se o Setup Clínico já estiver APROVADO, liberar para IN_PRODUCTION
+    // 3. Gatilho de Produção: Se o Setup Clínico já estiver APROVADO, liberar para IN_PRODUCTION + calcular SLA
     const hasApprovedSetup = clinicalCase.setups.length > 0;
     if (hasApprovedSetup && ['APPROVED', 'CAD_DESIGN', 'WAITING_DOCTOR_APPROVAL'].includes(clinicalCase.status)) {
       await tx.case.update({
         where: { id: caseId },
         data: { status: 'IN_PRODUCTION' },
       });
+
+      const activeInitialOrder = await tx.serviceOrder.findFirst({
+        where: {
+          caseId,
+          type: 'INITIAL',
+          status: { notIn: ['DELIVERED', 'CANCELLED'] },
+        },
+        orderBy: { sequenceNumber: 'desc' },
+      });
+
+      if (activeInitialOrder) {
+        const productionDueAt = calculateProductionDueAt(now, {
+          days: currentContract.productionSlaDays,
+          dayType: currentContract.productionSlaDayType,
+        });
+        await tx.serviceOrder.update({
+          where: { id: activeInitialOrder.id },
+          data: {
+            approvedAt: now,
+            productionDueAt,
+            status: 'RELEASED_FOR_PRODUCTION',
+          },
+        });
+      }
     }
 
     // 4. Trilha de Auditoria

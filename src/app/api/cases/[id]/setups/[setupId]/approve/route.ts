@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
+import { calculateProductionDueAt } from '@/lib/sla/treatment-sla';
 
 const approveSchema = z.object({
   professionalAcceptance: z.boolean().refine((v) => v === true, {
@@ -78,6 +79,37 @@ export async function POST(
         approvedAt: now,
       },
     });
+
+    // 2.1 Fase B (Matriz v2.0): Atualiza a OS ativa (Pedido Inicial ou Refinamento) e calcula productionDueAt se aplicável
+    const activeServiceOrder = await prisma.serviceOrder.findFirst({
+      where: {
+        caseId,
+        type: { in: ['INITIAL', 'REFINEMENT'] },
+        status: { notIn: ['DELIVERED', 'CANCELLED'] },
+      },
+      orderBy: { sequenceNumber: 'desc' },
+    });
+
+    if (activeServiceOrder) {
+      const canReleaseImmediately =
+        !activeServiceOrder.requiresNewBudget || Boolean(isContractConfirmed);
+
+      const productionDueAt = canReleaseImmediately
+        ? calculateProductionDueAt(now, {
+            days: existingContract?.productionSlaDays,
+            dayType: existingContract?.productionSlaDayType,
+          })
+        : null;
+
+      await prisma.serviceOrder.update({
+        where: { id: activeServiceOrder.id },
+        data: {
+          approvedAt: now,
+          productionDueAt: productionDueAt ?? activeServiceOrder.productionDueAt,
+          status: canReleaseImmediately ? 'RELEASED_FOR_PRODUCTION' : 'WAITING_PAYMENT',
+        },
+      });
+    }
 
     // 3. F5.03: Geração automática de Ordem de Produção (OP) imutável (Legado Preservado)
     const maxAligners = Math.max(

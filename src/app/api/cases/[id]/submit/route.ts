@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
 import { SLOTS_METADATA } from '@/lib/storage/validator';
+import { buildServiceOrderNumber, calculateSetupDueAt } from '@/lib/sla/treatment-sla';
 
 const submitCaseSchema = z.object({
   tcleConfirmed: z.boolean().optional().default(true),
@@ -163,6 +164,40 @@ export async function POST(
         },
       },
     });
+
+    // 9.1 Fase B (Matriz v2.0): Garante a OS #1 — Pedido Inicial com SLA de 3 dias úteis para Setup e marco Nemo PENDING
+    const existingInitialOrder = await db.serviceOrder.findFirst({
+      where: { caseId, type: 'INITIAL' },
+    });
+    const setupDueAt = calculateSetupDueAt(now, 3);
+
+    if (!existingInitialOrder) {
+      await db.serviceOrder.create({
+        data: {
+          caseId,
+          orderNumber: buildServiceOrderNumber(1, now),
+          sequenceNumber: 1,
+          type: 'INITIAL',
+          status: 'RECEIVED',
+          title: 'Pedido Inicial — Planejamento & 1ª Leva',
+          requiresNewBudget: true,
+          nemoStatus: 'PENDING',
+          receivedAt: now,
+          setupDueAt,
+          requestedById: sessionUser.userId,
+        },
+      });
+    } else {
+      await db.serviceOrder.update({
+        where: { id: existingInitialOrder.id },
+        data: {
+          status: 'RECEIVED',
+          receivedAt: now,
+          setupDueAt,
+          docsPendingReason: null,
+        },
+      });
+    }
 
     // 10. Trilha de Auditoria Imutável (LGPD & CFO)
     await prisma.auditLog.create({
