@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
+import { hasPermission } from '@/lib/auth/rbac';
+import { formatPatientCode } from '@/lib/patient360/overview-aggregator';
 
 const createCaseSchema = z.object({
   patientId: z.string().uuid(),
@@ -71,7 +73,34 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
   });
 
-  return NextResponse.json({ cases });
+  const userCtx = { role: sessionUser.role, permissions: sessionUser.permissions };
+  const canReadPatient = hasPermission(userCtx, 'PATIENT_READ');
+  const canReadClinical =
+    hasPermission(userCtx, 'FILE_READ') || hasPermission(userCtx, 'CASE_UPDATE');
+
+  const sanitizedCases = cases.map((c) => ({
+    ...c,
+    chiefComplaint: canReadClinical ? c.chiefComplaint : null,
+    angleClass: canReadClinical ? c.angleClass : null,
+    doctorNotes: canReadClinical ? c.doctorNotes : null,
+    restrictedTeethFdi: canReadClinical ? c.restrictedTeethFdi : null,
+    patient: canReadPatient
+      ? {
+          ...c.patient,
+          patientCode: formatPatientCode(c.patient.id),
+          piiMinimized: false,
+        }
+      : {
+          id: c.patient.id,
+          patientCode: formatPatientCode(c.patient.id),
+          fullName: c.patient.fullName,
+          birthDate: null,
+          gender: null,
+          piiMinimized: true,
+        },
+  }));
+
+  return NextResponse.json({ cases: sanitizedCases });
 }
 
 export async function POST(req: NextRequest) {

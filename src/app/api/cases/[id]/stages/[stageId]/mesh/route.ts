@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth/session';
-import { isFyAlignInternal } from '@/lib/auth/rbac';
+import { authorize } from '@/lib/auth/guard';
 import fs from 'fs';
 import path from 'path';
 import { s3Client } from '@/lib/storage/s3';
@@ -17,12 +16,17 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string; stageId: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  const { id: caseId, stageId } = params;
+
+  const auth = await authorize(req, {
+    permission: 'SETUP_READ',
+    resource: { type: 'CASE', id: caseId },
+  });
+
+  if (!auth.authorized) {
+    return auth.response;
   }
 
-  const { id: caseId, stageId } = params;
   const arch = req.nextUrl.searchParams.get('arch')?.toLowerCase() || 'upper';
 
   const stage = await prisma.setupStage.findUnique({
@@ -38,10 +42,6 @@ export async function GET(
 
   if (!stage || stage.setup.caseId !== caseId) {
     return NextResponse.json({ error: 'Estágio não encontrado' }, { status: 404 });
-  }
-
-  if (!isFyAlignInternal(sessionUser.role) && stage.setup.case.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
   }
 
   const storageKey = arch === 'lower' ? stage.lowerMeshStorageKey : stage.upperMeshStorageKey;

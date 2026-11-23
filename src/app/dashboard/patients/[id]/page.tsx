@@ -10,3 +10,4 @@ export default function Patient360Page() {
 
   return <PatientTreatment360View mode="PATIENT" resourceId={patientId} />;
 }
+

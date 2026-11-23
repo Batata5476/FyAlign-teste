@@ -9,9 +9,9 @@ export async function GET(
 ) {
   const caseId = params.id;
 
-  // Guard de Autorização: Exige CASE_READ e escopo do caso
+  // Guard de Autorização: Exige FILE_READ e escopo do caso (bloqueia SUPPORT e FINANCE)
   const auth = await authorize(req, {
-    permission: 'CASE_READ',
+    permission: 'FILE_READ',
     resource: { type: 'CASE', id: caseId },
   });
 

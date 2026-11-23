@@ -49,12 +49,14 @@ export default function DashboardPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'SETUP_AVAILABLE':
+      case 'WAITING_DOCTOR_APPROVAL':
         return (
           <span className="badge badge-setup-ready">
             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'currentColor' }}></span>
             Setup Pronto para Análise
           </span>
         );
+      case 'APPROVED':
       case 'APPROVED_BY_DOCTOR':
         return (
           <span className="badge badge-approved">
@@ -67,6 +69,21 @@ export default function DashboardPage() {
           <span className="badge badge-production">
             <Clock size={12} />
             Em Fabricação 3D
+          </span>
+        );
+      case 'COMPLETED':
+        return (
+          <span className="badge badge-approved">
+            <CheckCircle2 size={12} />
+            Tratamento Entregue
+          </span>
+        );
+      case 'SUBMITTED':
+      case 'CAD_DESIGN':
+        return (
+          <span className="badge badge-draft" style={{ color: 'var(--cyan-primary)' }}>
+            <Clock size={12} />
+            Em Planejamento CAD
           </span>
         );
       case 'DRAFT':
@@ -104,16 +121,18 @@ export default function DashboardPage() {
     c.caseCode?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const setupsReadyCount = cases.filter(c => c.status === 'SETUP_AVAILABLE').length;
+  const setupsReadyCount = cases.filter(
+    c => c.status === 'SETUP_AVAILABLE' || c.status === 'WAITING_DOCTOR_APPROVAL'
+  ).length;
   const inProductionCount = cases.filter(c => c.status === 'IN_PRODUCTION').length;
   const draftsCount = cases.filter(c => c.status === 'DRAFT').length;
 
   return (
     <div>
-      {/* Banner de Auditoria da Fase 1 */}
+      {/* Banner Institucional de Conformidade e Governança */}
       <div className="glass-panel" style={{
-        padding: '18px 24px',
-        marginBottom: '28px',
+        padding: '16px 22px',
+        marginBottom: '26px',
         borderLeft: '4px solid var(--cyan-primary)',
         display: 'flex',
         alignItems: 'center',
@@ -130,27 +149,38 @@ export default function DashboardPage() {
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <ShieldCheck size={24} color="var(--cyan-primary)" />
+            <ShieldCheck size={22} color="var(--cyan-primary)" />
           </div>
           <div>
-            <h4 style={{ fontSize: '1rem', color: 'var(--text-main)', marginBottom: '2px' }}>
-              Fase 1 Concluída com Sucesso: Arquitetura Base, Multi-Tenancy e RBAC
+            <h4 style={{ fontSize: '0.96rem', color: 'var(--text-main)', marginBottom: '2px' }}>
+              Portal FyAlign B2B — Ciclo Integrado de Tratamentos, Solicitações e Contratos
             </h4>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Banco relacional ativo com 10 modelos mapeados, isolamento estrito por clínica, autenticação JWT/Cookies e auditoria integrada.
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Governança granular por vínculo, minimização de dados sensíveis (LGPD) e rastreabilidade operacional completa.
             </p>
           </div>
         </div>
 
-        {can('AUDIT_READ') && (
-          <button
-            onClick={() => router.push('/dashboard/audit')}
-            className="btn-secondary"
-            style={{ fontSize: '0.82rem', padding: '8px 14px' }}
-          >
-            Ver Checklist de Auditoria
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {can('CONTRACT_READ') && (
+            <button
+              onClick={() => router.push('/dashboard/contracts')}
+              className="btn-secondary"
+              style={{ fontSize: '0.82rem', padding: '8px 14px' }}
+            >
+              Contratos Comerciais
+            </button>
+          )}
+          {can('AUDIT_READ') && (
+            <button
+              onClick={() => router.push('/dashboard/audit')}
+              className="btn-secondary"
+              style={{ fontSize: '0.82rem', padding: '8px 14px' }}
+            >
+              Trilha de Auditoria
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Header com Boas-Vindas e Ação Principal */}
@@ -271,9 +301,22 @@ export default function DashboardPage() {
 
         {!canReadCases ? (
           <div style={{ textAlign: 'center', padding: '56px 16px' }}>
-            <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-              Seu vínculo atual ({user?.role}) opera com escopo administrativo/financeiro sem acesso a prontuários clínicos (LGPD).
+            <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 600, marginBottom: '8px' }}>
+              Superfície Estritamente Comercial e Contratual ({user?.role})
             </p>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', maxWidth: '560px', margin: '0 auto 20px' }}>
+              Por conformidade LGPD, o seu vínculo não possui acesso direto a prontuários, fotografias ou planejamentos clínicos. Utilize o módulo dedicado de Contratos para confirmar fechamentos, emitir aditivos e homologar refinamentos.
+            </p>
+            {can('CONTRACT_READ') && (
+              <button
+                onClick={() => router.push('/dashboard/contracts')}
+                className="btn-primary"
+                style={{ padding: '12px 24px' }}
+              >
+                <FileText size={16} />
+                <span>Abrir Gestão de Contratos</span>
+              </button>
+            )}
           </div>
         ) : loading ? (
           <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>

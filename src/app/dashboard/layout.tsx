@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Lock,
+  Settings,
+  KeyRound,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OrganizationSwitcher } from '@/components/auth/OrganizationSwitcher';
@@ -27,6 +29,7 @@ import { Permission, userHasPermission } from '@/lib/auth/rbac';
 import {
   AuthProvider,
   FrontendAuthUser,
+  canAccessDashboardRoute,
   getRequiredRoutePermission,
 } from '@/lib/auth/AuthContext';
 
@@ -34,7 +37,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: any;
-  permission: Permission;
+  permission?: Permission | null;
 }
 
 interface NavSection {
@@ -83,6 +86,41 @@ export default function DashboardLayout({
     router.refresh();
   };
 
+  const [firstAccessCurrentPassword, setFirstAccessCurrentPassword] = useState('');
+  const [firstAccessNewPassword, setFirstAccessNewPassword] = useState('');
+  const [firstAccessConfirmPassword, setFirstAccessConfirmPassword] = useState('');
+  const [firstAccessLoading, setFirstAccessLoading] = useState(false);
+  const [firstAccessError, setFirstAccessError] = useState<string | null>(null);
+
+  const handleFirstAccessPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFirstAccessLoading(true);
+    setFirstAccessError(null);
+    try {
+      const res = await fetch('/api/account/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: firstAccessCurrentPassword,
+          newPassword: firstAccessNewPassword,
+          confirmPassword: firstAccessConfirmPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao redefinir senha temporária.');
+      }
+      setFirstAccessCurrentPassword('');
+      setFirstAccessNewPassword('');
+      setFirstAccessConfirmPassword('');
+      await loadUser();
+    } catch (err: any) {
+      setFirstAccessError(err.message || 'Erro ao salvar nova senha.');
+    } finally {
+      setFirstAccessLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div
@@ -119,6 +157,8 @@ export default function DashboardLayout({
   // mantendo toda a estrutura de rotas (/dashboard/orders), permissões e APIs intactas para ativação futura.
   const ENABLE_FINANCIAL_MODULE = false;
 
+  const isInternalFyAlign = user?.organization?.type === 'FYALIGN';
+
   const navSections: NavSection[] = [
     {
       title: 'Clínico & Pacientes',
@@ -127,7 +167,18 @@ export default function DashboardLayout({
         { label: 'Novo Pedido Inicial', href: '/dashboard/cases/new', icon: FolderPlus, permission: 'CASE_CREATE' },
         { label: 'Pacientes (Ficha 360°)', href: '/dashboard/patients', icon: Users, permission: 'PATIENT_READ' },
         { label: 'Setups Virtuais 3D', href: '/dashboard/setups', icon: Box, permission: 'SETUP_READ' },
-        { label: 'Equipe da Clínica', href: '/dashboard/team', icon: UserCheck, permission: 'TEAM_READ' },
+        {
+          label: isInternalFyAlign ? 'Equipe & Vínculos' : 'Equipe da Clínica',
+          href: '/dashboard/team',
+          icon: UserCheck,
+          permission: 'TEAM_READ',
+        },
+      ],
+    },
+    {
+      title: 'Comercial & Contratos',
+      items: [
+        { label: 'Contratos', href: '/dashboard/contracts', icon: FileText, permission: 'CONTRACT_READ' },
       ],
     },
     {
@@ -153,20 +204,27 @@ export default function DashboardLayout({
         { label: 'Trilha de Auditoria', href: '/dashboard/audit', icon: FileCheck, permission: 'AUDIT_READ' },
       ],
     },
+    {
+      title: 'Conta & Preferências',
+      items: [
+        { label: 'Configurações da Conta', href: '/dashboard/settings', icon: Settings, permission: null },
+      ],
+    },
   ];
 
   // 2. Filtragem dinâmica exclusivamente via user.permissions (fonte oficial de /api/auth/me)
   const allowedSections = navSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => userHasPermission(user, item.permission)),
+      items: section.items.filter(
+        (item) => !item.permission || userHasPermission(user, item.permission)
+      ),
     }))
     .filter((section) => section.items.length > 0);
 
   // 3. Proteção uniforme de páginas em navegação direta por URL
   const requiredRoutePermission = getRequiredRoutePermission(pathname || '');
-  const isRouteAllowed =
-    !requiredRoutePermission || userHasPermission(user, requiredRoutePermission);
+  const isRouteAllowed = canAccessDashboardRoute(user, pathname || '');
 
   return (
     <div className="app-container">
@@ -379,6 +437,8 @@ export default function DashboardLayout({
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
             <div
+              onClick={() => router.push('/dashboard/settings')}
+              title="Abrir Configurações da Conta"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -386,6 +446,7 @@ export default function DashboardLayout({
                 minWidth: 0,
                 flex: 1,
                 overflow: 'hidden',
+                cursor: 'pointer',
               }}
             >
               <div
@@ -439,10 +500,19 @@ export default function DashboardLayout({
 
             <button
               onClick={handleLogout}
-              title="Sair do Portal"
+              title="Encerrar Sessão"
               className="sidebar-logout-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 10px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+              }}
             >
-              <LogOut size={18} />
+              <LogOut size={16} />
+              <span>Sair</span>
             </button>
           </div>
         </div>
@@ -574,10 +644,177 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Content Area com Contexto Oficial de Permissões e Proteção de Rota */}
+        {/* Content Area com Contexto Oficial de Permissões, Orientação de 1º Acesso e Proteção de Rota */}
         <AuthProvider user={user} refreshUser={loadUser}>
           <main className="app-content">
-            {isRouteAllowed ? (
+            {user?.mustChangePassword ? (
+              <div
+                className="glass-panel"
+                style={{
+                  maxWidth: '560px',
+                  margin: '36px auto',
+                  padding: '32px',
+                  border: '1px solid rgba(0, 210, 211, 0.35)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <div
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '12px',
+                      background: 'rgba(0, 210, 211, 0.14)',
+                      border: '1px solid var(--cyan-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <KeyRound size={24} color="var(--cyan-primary)" />
+                  </div>
+                  <div>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        color: 'var(--cyan-primary)',
+                      }}
+                    >
+                      Primeiro Acesso • Convite de Equipe
+                    </span>
+                    <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', margin: '2px 0 0' }}>
+                      Redefina sua Senha Temporária
+                    </h2>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: '20px' }}>
+                  Olá, <strong style={{ color: 'var(--text-main)' }}>{user.fullName}</strong>! Você acessou a organização{' '}
+                  <strong style={{ color: 'var(--cyan-primary)' }}>{user.organization?.tradeName}</strong> com uma senha
+                  temporária enviada por e-mail. Por segurança, defina agora sua nova senha pessoal para liberar o painel.
+                </p>
+
+                {firstAccessError && (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#f87171',
+                      fontSize: '0.84rem',
+                      marginBottom: '16px',
+                    }}
+                  >
+                    {firstAccessError}
+                  </div>
+                )}
+
+                <form
+                  onSubmit={handleFirstAccessPasswordSubmit}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Senha Temporária (Recebida por E-mail)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={firstAccessCurrentPassword}
+                      onChange={(e) => setFirstAccessCurrentPassword(e.target.value)}
+                      placeholder="Digite a senha temporária do convite"
+                      className="form-input"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Nova Senha Definitiva (mín. 8 caracteres, maiúscula, minúscula e número)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={firstAccessNewPassword}
+                      onChange={(e) => setFirstAccessNewPassword(e.target.value)}
+                      placeholder="Crie sua senha pessoal"
+                      className="form-input"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Confirmar Nova Senha
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={firstAccessConfirmPassword}
+                      onChange={(e) => setFirstAccessConfirmPassword(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      className="form-input"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      marginTop: '8px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="btn-secondary"
+                      style={{ padding: '10px 16px', fontSize: '0.84rem' }}
+                    >
+                      Encerrar Sessão
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={firstAccessLoading}
+                      className="btn-primary"
+                      style={{ padding: '11px 22px', fontSize: '0.88rem' }}
+                    >
+                      {firstAccessLoading ? 'Salvando Nova Senha...' : 'Salvar Senha e Liberar Acesso'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : isRouteAllowed ? (
               children
             ) : (
               <div

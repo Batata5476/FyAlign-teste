@@ -159,6 +159,10 @@ async function runPasso4Tests() {
   console.log('  ✅ PASS: Tentativa de convite para papel interno do laboratório barrada com 403.');
 
   // Cenário B: CLINIC_ADMIN convidando um novo Assistente (Permitido)
+  process.env.FYALIGN_TEST_MAILBOX = '1';
+  await db.invitation.deleteMany({ where: { email: 'anapaula@odontoprime.com.br' } });
+  await db.user.deleteMany({ where: { email: 'anapaula@odontoprime.com.br' } });
+
   const validInviteReq = createReq(clinicAdminToken, {
     fullName: 'Ana Paula Assistente',
     email: 'anapaula@odontoprime.com.br',
@@ -168,7 +172,8 @@ async function runPasso4Tests() {
   assert(validInviteRes.status === 200, 'Convite legítimo de assistente deve ser aceito');
   const validInviteData = await validInviteRes.json();
   assert(validInviteData.success === true, 'Convite persistido com sucesso');
-  console.log('  ✅ PASS: Convite legítimo emitido e persistido no banco com expiração.');
+  assert(validInviteData.emailDelivery?.delivered === true, 'E-mail com senha temporária deve ser disparado');
+  console.log('  ✅ PASS: Convite legítimo emitido, e-mail disparado com senha temporária e persistido no banco.');
 
   // ========================================================================
   // Teste 5: Isolamento Multi-Tenant em Suspensão de Membro (Anti-IDOR)
@@ -292,8 +297,9 @@ async function runPasso4Tests() {
   assert(orgsData.organizations.length >= 2, 'Contém matriz e clínicas');
   console.log('  ✅ PASS: Visão global de organizações retornada com membros e contadores.');
 
-  // Limpeza de convite de teste
+  // Limpeza de convite e usuário provisionado de teste
   await db.invitation.deleteMany({ where: { email: 'anapaula@odontoprime.com.br' } });
+  await db.user.deleteMany({ where: { email: 'anapaula@odontoprime.com.br' } });
 
   console.log('\n====================================================');
   console.log('🏁 RESULTADO DO SPRINT RBAC PASSO 4: TODOS OS TESTES PASSARAM COM SUCESSO!');

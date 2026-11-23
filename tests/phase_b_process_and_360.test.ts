@@ -482,21 +482,62 @@ async function runPhaseBTests() {
     assert.strictEqual(preRadarBody.treatments[0].secondBatchRadar?.nextRangeStart, 13);
     assert.strictEqual(preRadarBody.treatments[0].secondBatchRadar?.nextRangeEnd, 24);
 
-    // Felipe dispara preparação da Segunda Leva (13–24)
-    const secondBatchRes = await createServiceOrder(
+    // Felipe (interno) NÃO pode abrir diretamente a Segunda Leva (403 — exclusivo DOCTOR CRO VERIFIED)
+    const felipeDirectSecondBatch = await createServiceOrder(
       makeReq(`/api/cases/${treatmentCase.id}/service-orders`, 'POST', felipeLab.token, {
         type: 'SECOND_BATCH',
         alignerRangeStart: 13,
         alignerRangeEnd: 24,
-        mode: 'IMMEDIATE',
+      }),
+      { params: { id: treatmentCase.id } }
+    );
+    assert.strictEqual(felipeDirectSecondBatch.status, 403, 'Abertura direta da 2ª leva bloqueada para laboratório');
+
+    // 1) Ortodontista (CRO VERIFIED) solicita Segunda Leva -> nasce estritamente em RECEIVED sem ProductionUnit
+    const secondBatchRes = await createServiceOrder(
+      makeReq(`/api/cases/${treatmentCase.id}/service-orders`, 'POST', ortodontista.token, {
+        type: 'SECOND_BATCH',
+        alignerRangeStart: 13,
+        alignerRangeEnd: 24,
       }),
       { params: { id: treatmentCase.id } }
     );
     assert.strictEqual(secondBatchRes.status, 201);
     const secondBatchBody = await secondBatchRes.json();
+    assert.strictEqual(secondBatchBody.serviceOrder.status, 'RECEIVED');
     assert.strictEqual(secondBatchBody.serviceOrder.requiresNewBudget, false);
     assert.strictEqual(secondBatchBody.serviceOrder.nemoStatus, 'NOT_REQUIRED');
-    assert(secondBatchBody.productionUnit, 'Deve gerar automaticamente o LOTE-02 para os pares 13–24');
+    assert.strictEqual(secondBatchBody.productionUnit, null, 'Não deve criar ProductionUnit na abertura (RECEIVED)');
+
+    // 2) Felipe realiza conferência interna e programa a 2ª Leva (RECEIVED -> SCHEDULED)
+    const scheduleBatchRes = await patchServiceOrder(
+      makeReq(
+        `/api/cases/${treatmentCase.id}/service-orders/${secondBatchBody.serviceOrder.id}`,
+        'PATCH',
+        felipeLab.token,
+        { action: 'SCHEDULE_SECOND_BATCH' }
+      ),
+      { params: { id: treatmentCase.id, orderId: secondBatchBody.serviceOrder.id } }
+    );
+    assert.strictEqual(scheduleBatchRes.status, 200);
+    const scheduleBatchBody = await scheduleBatchRes.json();
+    assert.strictEqual(scheduleBatchBody.serviceOrder.status, 'SCHEDULED');
+    assert(scheduleBatchBody.serviceOrder.docsVerifiedAt, 'Registra carimbo de conferência interna');
+
+    // 3) Felipe libera formalmente para produção (SCHEDULED -> RELEASED_FOR_PRODUCTION + LOTE-02)
+    const releaseBatchRes = await patchServiceOrder(
+      makeReq(
+        `/api/cases/${treatmentCase.id}/service-orders/${secondBatchBody.serviceOrder.id}`,
+        'PATCH',
+        felipeLab.token,
+        { action: 'RELEASE_PRODUCTION' }
+      ),
+      { params: { id: treatmentCase.id, orderId: secondBatchBody.serviceOrder.id } }
+    );
+    assert.strictEqual(releaseBatchRes.status, 200);
+    const releaseBatchBody = await releaseBatchRes.json();
+    assert.strictEqual(releaseBatchBody.serviceOrder.status, 'RELEASED_FOR_PRODUCTION');
+    assert(releaseBatchBody.productionUnit, 'Deve gerar atomicamente o LOTE-02 na liberação fabril');
 
     // Ortodontista abre Refinamento #1 (coberto pela franquia de 2 refinamentos)
     const refOrderRes = await createServiceOrder(
@@ -577,18 +618,34 @@ async function runPhaseBTests() {
       'NEMO-2026-777',
       'Felipe vê detalhes completos do caso no Nemo'
     );
+    assert(
+      felipeCase360.treatments[0].operationalEvents.every(
+        (ev: any) => !['BUDGET_SENT', 'CLIENT_APPROVAL_RECORDED', 'COMMERCIAL_NOTE', 'CONTRACT_PROPOSED', 'CONTRACT_CONFIRMED', 'CONTRACT_AMENDED', 'REFINEMENT_COMMERCIAL_DECISION'].includes(ev.eventType)
+      ),
+      'Eventos comerciais/financeiros (R$) ocultos para Felipe (PRODUCTION_QC)'
+    );
 
-    // 6.4 Dr. Paulo (FINANCE): bloqueado de prontuário e caso clínico (403 LGPD)
+    // 6.4 Dr. Paulo (FINANCE): bloqueado de prontuário (403) e autorizado em /api/cases/[id]/overview-360 em modo COMMERCIAL_ONLY pseudonimizado
     const pauloPatientAttempt = await getPatient360(
       makeReq(`/api/patients/${patient.id}/overview-360`, 'GET', drPauloFinanceiro.token),
       { params: { id: patient.id } }
     );
-    const pauloCaseAttempt = await getCase360(
+    const pauloCaseRes = await getCase360(
       makeReq(`/api/cases/${treatmentCase.id}/overview-360`, 'GET', drPauloFinanceiro.token),
       { params: { id: treatmentCase.id } }
     );
     assert.strictEqual(pauloPatientAttempt.status, 403);
-    assert.strictEqual(pauloCaseAttempt.status, 403);
+    assert.strictEqual(pauloCaseRes.status, 200);
+    const pauloCase360 = await pauloCaseRes.json();
+    assert.strictEqual(pauloCase360.viewMode, 'COMMERCIAL_ONLY');
+    assert.strictEqual(pauloCase360.patient.id, null);
+    assert.strictEqual(pauloCase360.patient.fullName, null);
+    assert(pauloCase360.patient.patientCode.startsWith('PAC-'));
+    assert.strictEqual(pauloCase360.treatments[0].clinical, null);
+    assert.strictEqual(pauloCase360.treatments[0].setups.length, 0);
+    assert.strictEqual(pauloCase360.treatments[0].documentation.files.length, 0);
+    assert.strictEqual(pauloCase360.treatments[0].refinements[0].clinicalReason, null);
+    assert(pauloCase360.treatments[0].commercialContract !== null);
 
     // 6.5 Anti-IDOR Cross-Tenant: Clínica B recebe 404
     const clinicBAttempt = await getPatient360(
@@ -615,3 +672,4 @@ runPhaseBTests()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

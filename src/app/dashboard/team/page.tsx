@@ -36,6 +36,7 @@ interface Member {
   croNumber?: string;
   croUf?: string;
   croStatus?: string;
+  mustChangePassword?: boolean;
   permissions: string[];
   createdAt: string;
   lastLoginAt?: string;
@@ -44,9 +45,13 @@ interface Member {
 
 interface Invitation {
   id: string;
+  fullName?: string | null;
   email: string;
   role: string;
   status: string;
+  emailDeliveryStatus?: string;
+  emailSentAt?: string | null;
+  emailError?: string | null;
   croNumber?: string;
   croUf?: string;
   permissions: string[];
@@ -117,8 +122,52 @@ export default function TeamManagementPage() {
   const [permissionsModalError, setPermissionsModalError] = useState<string | null>(null);
   const [permissionsModalSuccess, setPermissionsModalSuccess] = useState<string | null>(null);
 
-  // Ação de Suspensão / Reativação
+  // Ação de Suspensão / Reativação / Reenvio de Convite
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [inviteActionFeedback, setInviteActionFeedback] = useState<string | null>(null);
+
+  const handleResendInvitation = async (inv: Invitation) => {
+    setActionLoadingId(inv.id);
+    setInviteActionFeedback(null);
+    try {
+      const res = await fetch(`/api/team/invitations/${inv.id}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Falha ao reenviar convite.');
+        return;
+      }
+      setInviteActionFeedback(data.message || `Convite reenviado para ${inv.email}.`);
+      await fetchTeamData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao reenviar convite.');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRevokeInvitation = async (inv: Invitation) => {
+    if (!window.confirm(`Deseja revogar o convite pendente para ${inv.email}?`)) return;
+    setActionLoadingId(inv.id);
+    setInviteActionFeedback(null);
+    try {
+      const res = await fetch(`/api/team/invitations/${inv.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Falha ao revogar convite.');
+        return;
+      }
+      setInviteActionFeedback(data.message || 'Convite revogado com sucesso.');
+      await fetchTeamData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao revogar convite.');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   const fetchTeamData = async () => {
     try {
@@ -525,6 +574,22 @@ export default function TeamManagementPage() {
                                 Você
                               </span>
                             )}
+                            {member.mustChangePassword && (
+                              <span
+                                style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(245, 158, 11, 0.15)',
+                                  color: '#f59e0b',
+                                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                                }}
+                                title="Usuário recebeu senha temporária por e-mail e será orientado a redefinir no 1º acesso"
+                              >
+                                1º Acesso Pendente
+                              </span>
+                            )}
                           </div>
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{member.email}</span>
                         </div>
@@ -719,7 +784,13 @@ export default function TeamManagementPage() {
                     Validade
                   </th>
                   <th style={{ padding: '14px 20px', fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Status
+                    Entrega do E-mail
+                  </th>
+                  <th style={{ padding: '14px 20px', fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Status Convite
+                  </th>
+                  <th style={{ padding: '14px 20px', fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', textAlign: 'right' }}>
+                    Ações
                   </th>
                 </tr>
               </thead>
@@ -727,9 +798,16 @@ export default function TeamManagementPage() {
                 {invitations.map((inv) => (
                   <tr key={inv.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '14px 20px' }}>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                        {inv.email}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {inv.fullName && (
+                          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {inv.fullName}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                          {inv.email}
+                        </span>
+                      </div>
                     </td>
                     <td style={{ padding: '14px 20px' }}>
                       <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
@@ -761,6 +839,35 @@ export default function TeamManagementPage() {
                     </td>
                     <td style={{ padding: '14px 20px' }}>
                       <span
+                        title={inv.emailError || 'E-mail com senha temporária'}
+                        style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background:
+                            inv.emailDeliveryStatus === 'SENT'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : inv.emailDeliveryStatus === 'UNCONFIGURED'
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                          color:
+                            inv.emailDeliveryStatus === 'SENT'
+                              ? '#10b981'
+                              : inv.emailDeliveryStatus === 'UNCONFIGURED'
+                              ? '#f59e0b'
+                              : '#ef4444',
+                        }}
+                      >
+                        {inv.emailDeliveryStatus === 'SENT'
+                          ? 'E-MAIL ENVIADO'
+                          : inv.emailDeliveryStatus === 'UNCONFIGURED'
+                          ? 'AGUARDANDO SMTP (.ENV)'
+                          : 'FALHA NO ENVIO'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 20px' }}>
+                      <span
                         style={{
                           fontSize: '0.7rem',
                           fontWeight: 700,
@@ -781,11 +888,60 @@ export default function TeamManagementPage() {
                         }}
                       >
                         {inv.status === 'PENDING'
-                          ? 'PENDENTE'
+                          ? 'AGUARDANDO 1º ACESSO'
                           : inv.status === 'ACCEPTED'
-                          ? 'ACEITO'
+                          ? 'SENHA REDEFINIDA'
+                          : inv.status === 'REVOKED'
+                          ? 'REVOGADO'
                           : 'EXPIRADO'}
                       </span>
+                    </td>
+                    <td style={{ padding: '14px 20px', textAlign: 'right' }}>
+                      {inv.status === 'PENDING' && (canInviteTeam || canManageTeam) ? (
+                        <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          {canInviteTeam && (
+                            <button
+                              type="button"
+                              disabled={actionLoadingId === inv.id}
+                              onClick={() => handleResendInvitation(inv)}
+                              style={{
+                                background: 'rgba(0, 210, 211, 0.12)',
+                                border: '1px solid rgba(0, 210, 211, 0.3)',
+                                color: 'var(--cyan-primary)',
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                                padding: '5px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                              }}
+                              title="Gera uma nova senha temporária e reenvia o e-mail de convite"
+                            >
+                              Reenviar E-mail
+                            </button>
+                          )}
+                          {canManageTeam && (
+                            <button
+                              type="button"
+                              disabled={actionLoadingId === inv.id}
+                              onClick={() => handleRevokeInvitation(inv)}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#f87171',
+                                fontSize: '0.74rem',
+                                fontWeight: 600,
+                                padding: '5px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Revogar
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}

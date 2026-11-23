@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
+import { hasPermission } from '@/lib/auth/rbac';
+import { formatPatientCode } from '@/lib/patient360/overview-aggregator';
 
 const updateCaseSchema = z.object({
   patientId: z.string().uuid().optional(),
@@ -80,7 +82,48 @@ export async function GET(
     return NextResponse.json({ error: 'Caso clínico não encontrado.' }, { status: 404 });
   }
 
-  return NextResponse.json({ case: clinicalCase });
+  const userCtx = { role: auth.user.role, permissions: auth.user.permissions };
+  const canReadPatient = hasPermission(userCtx, 'PATIENT_READ');
+  const canReadClinical =
+    hasPermission(userCtx, 'FILE_READ') || hasPermission(userCtx, 'CASE_UPDATE');
+  const canReadFiles = hasPermission(userCtx, 'FILE_READ');
+  const canReadSetup = hasPermission(userCtx, 'SETUP_READ');
+
+  const sanitizedCase = {
+    ...clinicalCase,
+    chiefComplaint: canReadClinical ? clinicalCase.chiefComplaint : null,
+    angleClass: canReadClinical ? clinicalCase.angleClass : null,
+    doctorNotes: canReadClinical ? clinicalCase.doctorNotes : null,
+    restrictedTeethFdi: canReadClinical ? clinicalCase.restrictedTeethFdi : null,
+    iprPreferences: canReadClinical ? clinicalCase.iprPreferences : null,
+    attachmentPreferences: canReadClinical ? clinicalCase.attachmentPreferences : null,
+    clinicalCondition: canReadClinical ? clinicalCase.clinicalCondition : null,
+    treatmentPlan: canReadClinical ? clinicalCase.treatmentPlan : null,
+    consents: canReadClinical ? clinicalCase.consents : [],
+    files: canReadFiles ? clinicalCase.files : [],
+    setups: canReadSetup ? clinicalCase.setups : [],
+    patient: canReadPatient
+      ? {
+          ...clinicalCase.patient,
+          patientCode: formatPatientCode(clinicalCase.patient.id),
+          piiMinimized: false,
+        }
+      : {
+          id: clinicalCase.patient.id,
+          patientCode: formatPatientCode(clinicalCase.patient.id),
+          fullName: clinicalCase.patient.fullName,
+          birthDate: null,
+          gender: null,
+          phone: null,
+          email: null,
+          cpf: null,
+          tcleSigned: clinicalCase.patient.tcleSigned,
+          clinicId: clinicalCase.patient.clinicId,
+          piiMinimized: true,
+        },
+  };
+
+  return NextResponse.json({ case: sanitizedCase });
 }
 
 export async function PATCH(

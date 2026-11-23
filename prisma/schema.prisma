@@ -45,6 +45,8 @@ model User {
   phone               String?
   avatarUrl           String?
   isActive            Boolean          @default(true)
+  mustChangePassword  Boolean          @default(false)
+  passwordChangedAt   DateTime?
   twoFactorEnabled    Boolean          @default(false)
   lastLoginAt         DateTime?
   createdAt           DateTime         @default(now())
@@ -139,19 +141,23 @@ model MembershipPermission {
 // 4. CONVITES (Token Seguro e Atribuição Travada com Permissões Concedidas)
 // ============================================================================
 model Invitation {
-  id              String       @id @default(uuid())
-  organizationId  String
-  email           String
-  role            String       // Papel base (teto de permissões)
-  tokenHash       String       @unique
-  croNumber       String?
-  croUf           String?
-  status          String       @default("PENDING") // PENDING, ACCEPTED, REVOKED, EXPIRED
-  expiresAt       DateTime
-  invitedById     String
-  acceptedAt      DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id                  String       @id @default(uuid())
+  organizationId      String
+  fullName            String?
+  email               String
+  role                String       // Papel base (teto de permissões)
+  tokenHash           String       @unique
+  croNumber           String?
+  croUf               String?
+  status              String       @default("PENDING") // PENDING, ACCEPTED, REVOKED, EXPIRED
+  emailDeliveryStatus String       @default("PENDING") // PENDING, SENT, FAILED, UNCONFIGURED
+  emailSentAt         DateTime?
+  emailError          String?
+  expiresAt           DateTime
+  invitedById         String
+  acceptedAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invitedBy       User                   @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)

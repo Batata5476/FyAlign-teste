@@ -74,8 +74,8 @@ export default function CaseSetupViewerPage() {
           Nenhum Setup Virtual publicado para este caso no momento.
         </p>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button onClick={() => router.push('/dashboard')} className="btn-secondary">
-            Voltar ao Dashboard
+          <button onClick={() => router.push(`/dashboard/cases/${caseId}`)} className="btn-secondary">
+            Voltar para Ficha 360°
           </button>
           {canPublishSetup && (
             <button
@@ -139,12 +139,12 @@ export default function CaseSetupViewerPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(`/dashboard/cases/${caseId}`)}
             className="btn-secondary"
             style={{ padding: '8px 12px' }}
           >
             <ArrowLeft size={16} />
-            <span>Voltar</span>
+            <span>Voltar para Ficha 360°</span>
           </button>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

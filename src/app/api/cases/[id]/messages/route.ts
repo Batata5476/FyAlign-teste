@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth/session';
-import { isFyAlignInternal } from '@/lib/auth/rbac';
+import { authorize } from '@/lib/auth/guard';
+import { sanitizeString } from '@/lib/security/sanitizer';
 import { extractFdiMentions } from '@/lib/chat/fdiMention';
 
 const createMessageSchema = z.object({
@@ -15,25 +15,17 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-  }
-
   const caseId = params.id;
-
-  const clinicalCase = await prisma.case.findUnique({
-    where: { id: caseId },
+  const auth = await authorize(req, {
+    permission: 'CASE_READ',
+    resource: { type: 'CASE', id: caseId },
   });
-
-  if (!clinicalCase) {
-    return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 });
+  if (!auth.authorized) {
+    return auth.response;
   }
 
-  const isInternal = isFyAlignInternal(sessionUser.role);
-  if (!isInternal && clinicalCase.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
+  const sessionUser = auth.user;
+  const isInternal = sessionUser.organizationType === 'FYALIGN';
 
   // F5.09: Se for usuário de clínica, não pode ver notas internas do laboratório
   const messages = await prisma.caseMessage.findMany({
@@ -66,25 +58,17 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-  }
-
   const caseId = params.id;
-
-  const clinicalCase = await prisma.case.findUnique({
-    where: { id: caseId },
+  const auth = await authorize(req, {
+    permission: 'CASE_READ',
+    resource: { type: 'CASE', id: caseId },
   });
-
-  if (!clinicalCase) {
-    return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 });
+  if (!auth.authorized) {
+    return auth.response;
   }
 
-  const isInternal = isFyAlignInternal(sessionUser.role);
-  if (!isInternal && clinicalCase.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
+  const sessionUser = auth.user;
+  const isInternal = sessionUser.organizationType === 'FYALIGN';
 
   try {
     const body = await req.json();
@@ -98,14 +82,14 @@ export async function POST(
       );
     }
 
-    // F5.07: Extração automática de menções a dentes FDI (#11 a #48)
-    const mentionedTeeth = extractFdiMentions(content);
+    const cleanContent = sanitizeString(content);
+    const mentionedTeeth = extractFdiMentions(cleanContent);
 
     const message = await prisma.caseMessage.create({
       data: {
         caseId,
         senderId: sessionUser.userId,
-        content,
+        content: cleanContent,
         isInternalLabOnly,
         mentionedTeethFdi: mentionedTeeth.length > 0 ? JSON.stringify(mentionedTeeth) : null,
         attachmentUrls: attachmentUrls.length > 0 ? JSON.stringify(attachmentUrls) : null,
@@ -122,10 +106,13 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({
-      message,
-      mentionedTeeth,
-    });
+    return NextResponse.json(
+      {
+        message,
+        mentionedTeeth,
+      },
+      { status: 201 }
+    );
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors[0].message }, { status: 400 });

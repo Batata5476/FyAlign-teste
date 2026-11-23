@@ -171,8 +171,9 @@ export async function POST(
     });
     const setupDueAt = calculateSetupDueAt(now, 3);
 
+    let targetOrderId: string;
     if (!existingInitialOrder) {
-      await db.serviceOrder.create({
+      const createdInitialOrder = await db.serviceOrder.create({
         data: {
           caseId,
           orderNumber: buildServiceOrderNumber(1, now),
@@ -187,6 +188,7 @@ export async function POST(
           requestedById: sessionUser.userId,
         },
       });
+      targetOrderId = createdInitialOrder.id;
     } else {
       await db.serviceOrder.update({
         where: { id: existingInitialOrder.id },
@@ -197,7 +199,22 @@ export async function POST(
           docsPendingReason: null,
         },
       });
+      targetOrderId = existingInitialOrder.id;
     }
+
+    await db.operationalEvent.create({
+      data: {
+        caseId,
+        serviceOrderId: targetOrderId,
+        eventType: 'INITIAL_SUBMITTED',
+        channel: 'PORTAL',
+        summary: `Pedido Inicial submetido e assinado digitalmente por ${sessionUser.fullName}`,
+        details: null,
+        isInternalOnly: false,
+        recordedById: sessionUser.userId,
+        occurredAt: now,
+      },
+    });
 
     // 10. Trilha de Auditoria Imutável (LGPD & CFO)
     await prisma.auditLog.create({

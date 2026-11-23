@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
+import { hasPermission } from '@/lib/auth/rbac';
 import { ClinicalConditionSchema, isCaseClinicallyLocked } from '@/lib/types/clinical';
 
 const db = prisma as any;
@@ -19,6 +20,14 @@ export async function GET(
 
   if (!auth.authorized) {
     return auth.response;
+  }
+
+  const userCtx = { role: auth.user.role, permissions: auth.user.permissions };
+  if (!hasPermission(userCtx, 'FILE_READ') && !hasPermission(userCtx, 'CASE_UPDATE')) {
+    return NextResponse.json(
+      { error: 'Acesso negado aos dados clínicos de oclusão.', code: 'FORBIDDEN_PERMISSION' },
+      { status: 403 }
+    );
   }
 
   const condition = await db.clinicalCondition.findUnique({

@@ -10,6 +10,14 @@ const envSchema = z.object({
   AWS_S3_BUCKET_NAME: z.string().default('fyalign-cases-vault'),
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  EMAIL_PROVIDER: z.enum(['auto', 'smtp', 'resend', 'ethereal', 'memory']).default('auto'),
+  EMAIL_FROM: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse({
@@ -22,4 +30,12 @@ export const env = envSchema.parse({
   AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || 'fyalign-cases-vault',
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   NODE_ENV: process.env.NODE_ENV || 'development',
+  EMAIL_PROVIDER: (process.env.EMAIL_PROVIDER as any) || 'auto',
+  EMAIL_FROM: process.env.EMAIL_FROM || undefined,
+  SMTP_HOST: process.env.SMTP_HOST || undefined,
+  SMTP_PORT: process.env.SMTP_PORT || 587,
+  SMTP_SECURE: process.env.SMTP_SECURE || undefined,
+  SMTP_USER: process.env.SMTP_USER || undefined,
+  SMTP_PASS: process.env.SMTP_PASS || undefined,
+  RESEND_API_KEY: process.env.RESEND_API_KEY || undefined,
 });

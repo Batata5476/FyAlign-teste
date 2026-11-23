@@ -51,6 +51,21 @@ export async function authorize(
     };
   }
 
+  // 2.1 Trava de Segurança de Primeiro Acesso (Senha Temporária de Convite)
+  if (user.mustChangePassword) {
+    return {
+      authorized: false,
+      response: NextResponse.json(
+        {
+          error:
+            'Redefinição de senha obrigatória: defina sua senha pessoal definitiva antes de acessar os recursos da plataforma.',
+          code: 'PASSWORD_CHANGE_REQUIRED',
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
   // 3. Validação de Permissão Granular (Role Ceiling + Membership Permissions)
   if (!hasPermission({ role: user.role, permissions: user.permissions }, options.permission)) {
     return {

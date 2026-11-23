@@ -25,6 +25,12 @@ export interface AuthUserContext {
   croStatus: string; // Sempre revalidado contra o banco
   email: string;
   fullName: string;
+  phone?: string | null;
+  mustChangePassword: boolean;
+  passwordChangedAt?: Date | null;
+  lastLoginAt?: Date | null;
+  createdAt?: Date;
+  twoFactorEnabled?: boolean;
   permissions: Permission[]; // Permissões granulares efetivas do vínculo ativo
   memberships: MembershipSummary[];
 
@@ -191,6 +197,12 @@ export async function getCurrentUser(req?: any): Promise<AuthUserContext | null>
     croStatus: activeMembership.croStatus, // Valor fresco diretamente do banco
     email: user.email,
     fullName: user.fullName,
+    phone: user.phone || null,
+    mustChangePassword: Boolean((user as any).mustChangePassword),
+    passwordChangedAt: (user as any).passwordChangedAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+    createdAt: user.createdAt,
+    twoFactorEnabled: Boolean(user.twoFactorEnabled),
     permissions: effectivePermissions,
     memberships: availableMemberships.map((m: any) => ({
       id: m.id,

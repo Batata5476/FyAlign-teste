@@ -4,6 +4,11 @@ import { authorize } from '@/lib/auth/guard';
 import { hasCommercialAuthority } from '@/lib/auth/rbac';
 import { CreateContractSchema } from '@/lib/types/contract';
 import { calculateProductionDueAt } from '@/lib/sla/treatment-sla';
+import {
+  extractIdempotencyKey,
+  findIdempotentAuditReplay,
+  isContractActiveAndConfirmed,
+} from '@/lib/domain/treatment-lifecycle';
 import { z } from 'zod';
 
 export async function GET(
@@ -26,14 +31,23 @@ export async function GET(
   }
 
   // Anti-IDOR: Usuários de clínicas só acessam casos da sua própria clínica
-  if (sessionUser.organizationType === 'CLINIC' && clinicalCase.clinicId !== sessionUser.organizationId) {
-    return NextResponse.json({ error: 'Caso não encontrado ou acesso não autorizado.' }, { status: 404 });
+  if (
+    sessionUser.organizationType === 'CLINIC' &&
+    clinicalCase.clinicId !== sessionUser.organizationId
+  ) {
+    return NextResponse.json(
+      { error: 'Caso não encontrado ou acesso não autorizado.' },
+      { status: 404 }
+    );
   }
 
   const contract = await prisma.caseCommercialContract.findUnique({
     where: { caseId },
     include: {
       versions: {
+        include: {
+          changedBy: { select: { id: true, fullName: true } },
+        },
         orderBy: { versionNumber: 'desc' },
       },
       confirmedBy: {
@@ -65,44 +79,107 @@ export async function POST(
   }
 
   // Anti-IDOR
-  if (sessionUser.organizationType === 'CLINIC' && clinicalCase.clinicId !== sessionUser.organizationId) {
-    return NextResponse.json({ error: 'Caso não encontrado ou acesso não autorizado.' }, { status: 404 });
-  }
-
-  if (clinicalCase.commercialContract) {
+  if (
+    sessionUser.organizationType === 'CLINIC' &&
+    clinicalCase.clinicId !== sessionUser.organizationId
+  ) {
     return NextResponse.json(
-      { error: 'Este caso clínico já possui um contrato comercial associado (Invariante 1).' },
-      { status: 400 }
+      { error: 'Caso não encontrado ou acesso não autorizado.' },
+      { status: 404 }
     );
   }
 
   try {
-    const body = await req.json();
-    const data = CreateContractSchema.parse(body);
+    const rawBody = await req.json();
+    const idempotencyKey = extractIdempotencyKey(req, rawBody);
 
-    const year = new Date().getFullYear();
+    const replay = await findIdempotentAuditReplay(prisma, {
+      caseId,
+      userId: sessionUser.userId,
+      action: 'CONTRACT_PROPOSED',
+      idempotencyKey,
+    });
+    if (replay?.contractId && clinicalCase.commercialContract) {
+      return NextResponse.json(
+        { contract: clinicalCase.commercialContract, idempotentReplay: true },
+        { status: 200 }
+      );
+    }
+
+    if (clinicalCase.commercialContract) {
+      return NextResponse.json(
+        { error: 'Este caso clínico já possui um contrato comercial associado (Invariante 1).' },
+        { status: 400 }
+      );
+    }
+
+    const data = CreateContractSchema.parse(rawBody);
+
+    const now = new Date();
+    const year = now.getFullYear();
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const contractCode = `CTR-${year}-${randomSuffix}`;
+    const clientIp = req.ip || req.headers.get('x-forwarded-for') || '127.0.0.1';
+    const userAgent = req.headers.get('user-agent') || 'FyAlign/Backend';
 
-    const newContract = await prisma.caseCommercialContract.create({
-      data: {
-        caseId,
-        contractCode,
-        packageName: data.packageName,
-        contractedAligners: data.contractedAligners,
-        totalPriceCents: data.totalPriceCents,
-        currency: data.currency,
-        productionModel: data.productionModel,
-        deliveryModel: data.deliveryModel,
-        includedRefinements: data.includedRefinements,
-        refinementWindowDays: data.refinementWindowDays,
-        extraAlignerPriceCents: data.extraAlignerPriceCents,
-        setupSlaBusinessDays: data.setupSlaBusinessDays,
-        productionSlaDays: data.productionSlaDays,
-        productionSlaDayType: data.productionSlaDayType,
-        commercialNotes: data.commercialNotes || null,
-        status: 'DRAFT',
-      },
+    const newContract = await prisma.$transaction(async (tx) => {
+      const created = await tx.caseCommercialContract.create({
+        data: {
+          caseId,
+          contractCode,
+          packageName: data.packageName,
+          contractedAligners: data.contractedAligners,
+          totalPriceCents: data.totalPriceCents,
+          currency: data.currency,
+          productionModel: data.productionModel,
+          deliveryModel: data.deliveryModel,
+          includedRefinements: data.includedRefinements,
+          refinementWindowDays: data.refinementWindowDays,
+          extraAlignerPriceCents: data.extraAlignerPriceCents,
+          setupSlaBusinessDays: data.setupSlaBusinessDays,
+          productionSlaDays: data.productionSlaDays,
+          productionSlaDayType: data.productionSlaDayType,
+          commercialNotes: data.commercialNotes || null,
+          status: 'DRAFT',
+        },
+      });
+
+      await tx.operationalEvent.create({
+        data: {
+          caseId,
+          eventType: 'CONTRACT_PROPOSED',
+          channel: 'INTERNAL',
+          summary: `Proposta comercial ${contractCode} emitida (${data.packageName} — ${data.contractedAligners} pares)`,
+          details: data.commercialNotes || null,
+          isInternalOnly: false,
+          recordedById: sessionUser.userId,
+          occurredAt: now,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          caseId,
+          userId: sessionUser.userId,
+          organizationId: sessionUser.organizationId,
+          membershipId: sessionUser.activeMembershipId,
+          action: 'CONTRACT_PROPOSED',
+          entityAffected: 'CaseCommercialContract',
+          payloadDiff: JSON.stringify({
+            idempotencyKey,
+            contractId: created.id,
+            contractCode,
+            packageName: data.packageName,
+            contractedAligners: data.contractedAligners,
+            totalPriceCents: data.totalPriceCents,
+            proposedById: sessionUser.userId,
+          }),
+          ipAddress: clientIp,
+          userAgent,
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({ contract: newContract }, { status: 201 });
@@ -110,7 +187,16 @@ export async function POST(
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.errors[0].message }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || 'Erro ao criar contrato.' }, { status: 500 });
+    if (err?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Este caso já possui proposta contratual em processamento.', code: 'DUPLICATE_CONTRACT' },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      { error: err.message || 'Erro ao criar contrato.' },
+      { status: 500 }
+    );
   }
 }
 
@@ -146,26 +232,35 @@ export async function PATCH(
   });
 
   if (!clinicalCase || !clinicalCase.commercialContract) {
-    return NextResponse.json({ error: 'Contrato comercial não encontrado para este caso.' }, { status: 404 });
+    return NextResponse.json(
+      { error: 'Contrato comercial não encontrado para este caso.' },
+      { status: 404 }
+    );
   }
 
   const currentContract = clinicalCase.commercialContract;
 
-  if (currentContract.status === 'CONFIRMED') {
+  if (isContractActiveAndConfirmed(currentContract)) {
     return NextResponse.json(
-      { message: 'Contrato já confirmado anteriormente.', contract: currentContract },
+      {
+        message: 'Contrato já confirmado anteriormente.',
+        contract: currentContract,
+        idempotentReplay: true,
+      },
       { status: 200 }
     );
   }
 
   if (currentContract.status === 'CANCELLED') {
-    return NextResponse.json({ error: 'Contrato cancelado não pode ser confirmado.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Contrato cancelado não pode ser confirmado.' },
+      { status: 400 }
+    );
   }
 
-  // Operação Atômica: Confirmação + Version 1 Snapshot + Avaliação do Gatilho de Produção
+  // Operação Atômica: Confirmação + Version 1 Snapshot + Avaliação do Gatilho de Produção + Eventos/Auditoria
   const now = new Date();
   const confirmedContract = await prisma.$transaction(async (tx) => {
-    // 1. Atualizar Contrato
     const updated = await tx.caseCommercialContract.update({
       where: { id: currentContract.id },
       data: {
@@ -175,7 +270,6 @@ export async function PATCH(
       },
     });
 
-    // 2. Criar Snapshot da Versão 1
     const snapshotJson = JSON.stringify({
       contractCode: currentContract.contractCode,
       packageName: currentContract.packageName,
@@ -211,9 +305,12 @@ export async function PATCH(
       },
     });
 
-    // 3. Gatilho de Produção: Se o Setup Clínico já estiver APROVADO, liberar para IN_PRODUCTION + calcular SLA
+    // Gatilho de Produção: Se o Setup Clínico já estiver APROVADO, liberar para IN_PRODUCTION + calcular SLA
     const hasApprovedSetup = clinicalCase.setups.length > 0;
-    if (hasApprovedSetup && ['APPROVED', 'CAD_DESIGN', 'WAITING_DOCTOR_APPROVAL'].includes(clinicalCase.status)) {
+    if (
+      hasApprovedSetup &&
+      ['APPROVED', 'CAD_DESIGN', 'WAITING_DOCTOR_APPROVAL'].includes(clinicalCase.status)
+    ) {
       await tx.case.update({
         where: { id: caseId },
         data: { status: 'IN_PRODUCTION' },
@@ -236,15 +333,32 @@ export async function PATCH(
         await tx.serviceOrder.update({
           where: { id: activeInitialOrder.id },
           data: {
-            approvedAt: now,
+            approvedAt: activeInitialOrder.approvedAt || now,
             productionDueAt,
+            productionReleasedAt: activeInitialOrder.productionReleasedAt || now,
+            productionReleasedById:
+              activeInitialOrder.productionReleasedById || sessionUser.userId,
             status: 'RELEASED_FOR_PRODUCTION',
           },
         });
       }
     }
 
-    // 4. Trilha de Auditoria
+    await tx.operationalEvent.create({
+      data: {
+        caseId,
+        eventType: 'CONTRACT_CONFIRMED',
+        channel: 'INTERNAL',
+        summary: `Contrato comercial ${currentContract.contractCode} confirmado pelo Financeiro (v1)`,
+        details: hasApprovedSetup
+          ? 'Gatilho duplo atendido (Setup aprovado + Contrato confirmado) — produção liberada.'
+          : 'Aguardando aprovação clínica do Setup pelo ortodontista para liberar manufatura.',
+        isInternalOnly: false,
+        recordedById: sessionUser.userId,
+        occurredAt: now,
+      },
+    });
+
     await tx.auditLog.create({
       data: {
         caseId,
@@ -255,8 +369,11 @@ export async function PATCH(
         entityAffected: 'CaseCommercialContract',
         payloadDiff: JSON.stringify({
           contractId: currentContract.id,
+          contractCode: currentContract.contractCode,
           totalPriceCents: currentContract.totalPriceCents,
           contractedAligners: currentContract.contractedAligners,
+          confirmedById: sessionUser.userId,
+          confirmedAt: now.toISOString(),
           hasApprovedSetup,
         }),
         ipAddress: req.ip || req.headers.get('x-forwarded-for') || '127.0.0.1',

@@ -65,12 +65,12 @@ export default function CasePrescriptionPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <button
-            onClick={() => router.push(`/dashboard/cases/${caseId}/upload`)}
+            onClick={() => router.push(`/dashboard/cases/${caseId}`)}
             className="btn-secondary"
             style={{ padding: '8px 12px' }}
           >
             <ArrowLeft size={16} />
-            <span>Voltar para Uploads</span>
+            <span>Voltar para Ficha 360°</span>
           </button>
           <div>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Etapa 2 de 2 • Prescrição Clínica</span>
@@ -96,7 +96,7 @@ export default function CasePrescriptionPage() {
         initialCase={caseData}
         userCro={currentUser?.professionalIdCro}
         userName={currentUser?.fullName}
-        onSubmitted={() => router.push('/dashboard')}
+        onSubmitted={() => router.push(`/dashboard/cases/${caseId}`)}
       />
     </div>
   );

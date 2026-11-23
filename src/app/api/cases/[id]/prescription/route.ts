@@ -1,19 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth/session';
-import { isFyAlignInternal } from '@/lib/auth/rbac';
+import { authorize } from '@/lib/auth/guard';
+import { hasPermission } from '@/lib/auth/rbac';
+import { formatPatientCode } from '@/lib/patient360/overview-aggregator';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  const caseId = params.id;
+
+  const auth = await authorize(req, {
+    permission: 'CASE_READ',
+    resource: { type: 'CASE', id: caseId },
+  });
+
+  if (!auth.authorized) {
+    return auth.response;
   }
 
-  const caseId = params.id;
+  const userCtx = { role: auth.user.role, permissions: auth.user.permissions };
+  const canReadClinical =
+    hasPermission(userCtx, 'FILE_READ') || hasPermission(userCtx, 'CASE_UPDATE');
+
+  if (!canReadClinical) {
+    return NextResponse.json(
+      {
+        error: 'Acesso negado: Permissão clínica (FILE_READ ou CASE_UPDATE) necessária para visualizar prescrição.',
+        code: 'FORBIDDEN_PERMISSION',
+      },
+      { status: 403 }
+    );
+  }
 
   const clinicalCase = await prisma.case.findUnique({
     where: { id: caseId },
@@ -43,11 +62,33 @@ export async function GET(
     return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 });
   }
 
-  if (!isFyAlignInternal(sessionUser.role) && clinicalCase.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
+  const canReadPatient = hasPermission(userCtx, 'PATIENT_READ');
+  const canReadFiles = hasPermission(userCtx, 'FILE_READ');
 
-  return NextResponse.json({ case: clinicalCase });
+  const sanitizedCase = {
+    ...clinicalCase,
+    files: canReadFiles ? clinicalCase.files : [],
+    patient: canReadPatient
+      ? {
+          ...clinicalCase.patient,
+          patientCode: formatPatientCode(clinicalCase.patient.id),
+          piiMinimized: false,
+        }
+      : {
+          id: clinicalCase.patient.id,
+          patientCode: formatPatientCode(clinicalCase.patient.id),
+          fullName: clinicalCase.patient.fullName,
+          birthDate: null,
+          gender: null,
+          phone: null,
+          email: null,
+          tcleSigned: clinicalCase.patient.tcleSigned,
+          clinicId: clinicalCase.patient.clinicId,
+          piiMinimized: true,
+        },
+  };
+
+  return NextResponse.json({ case: sanitizedCase });
 }
 
 const updatePrescriptionSchema = z.object({
@@ -57,14 +98,18 @@ const updatePrescriptionSchema = z.object({
   midlinePreference: z.string().optional(),
   restrictedTeethFdi: z.array(z.string()).optional(),
   extractedTeethFdi: z.array(z.string()).optional(),
-  iprPreferences: z.object({
-    allowed: z.boolean(),
-    maxPerContactMm: z.number().optional(),
-  }).optional(),
-  attachmentPreferences: z.object({
-    allowed: z.boolean(),
-    avoidAnterior: z.boolean().optional(),
-  }).optional(),
+  iprPreferences: z
+    .object({
+      allowed: z.boolean(),
+      maxPerContactMm: z.number().optional(),
+    })
+    .optional(),
+  attachmentPreferences: z
+    .object({
+      allowed: z.boolean(),
+      avoidAnterior: z.boolean().optional(),
+    })
+    .optional(),
   doctorNotes: z.string().optional(),
 });
 
@@ -72,12 +117,16 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-  }
-
   const caseId = params.id;
+
+  const auth = await authorize(req, {
+    permission: 'CASE_UPDATE',
+    resource: { type: 'CASE', id: caseId },
+  });
+
+  if (!auth.authorized) {
+    return auth.response;
+  }
 
   const clinicalCase = await prisma.case.findUnique({
     where: { id: caseId },
@@ -87,11 +136,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 });
   }
 
-  if (!isFyAlignInternal(sessionUser.role) && clinicalCase.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
-
-  if (['APPROVED_BY_DOCTOR', 'IN_PRODUCTION'].includes(clinicalCase.status)) {
+  if (['APPROVED', 'APPROVED_BY_DOCTOR', 'IN_PRODUCTION', 'COMPLETED'].includes(clinicalCase.status)) {
     return NextResponse.json(
       { error: 'Caso travado após aprovação formal (RN-03)' },
       { status: 400 }
@@ -122,6 +167,20 @@ export async function PATCH(
       where: { id: caseId },
       data: updateData,
       include: { patient: true },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        caseId,
+        userId: auth.user.userId,
+        organizationId: auth.user.organizationId,
+        membershipId: auth.user.activeMembershipId,
+        action: 'UPDATE_PRESCRIPTION',
+        entityAffected: 'Case',
+        payloadDiff: JSON.stringify(updateData),
+        ipAddress: req.ip || req.headers.get('x-forwarded-for') || '127.0.0.1',
+        userAgent: req.headers.get('user-agent') || 'Unknown',
+      },
     });
 
     return NextResponse.json({ success: true, case: updatedCase });

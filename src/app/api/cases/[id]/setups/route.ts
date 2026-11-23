@@ -3,8 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth/session';
-import { isFyAlignInternal } from '@/lib/auth/rbac';
+import { authorize } from '@/lib/auth/guard';
+import { hasPermission } from '@/lib/auth/rbac';
+import { formatPatientCode } from '@/lib/patient360/overview-aggregator';
 import { s3Client } from '@/lib/storage/s3';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '@/lib/env';
@@ -15,12 +16,20 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  const caseId = params.id;
+
+  const auth = await authorize(req, {
+    permission: 'SETUP_READ',
+    resource: { type: 'CASE', id: caseId },
+  });
+
+  if (!auth.authorized) {
+    return auth.response;
   }
 
-  const caseId = params.id;
+  const sessionUser = auth.user;
+  const userCtx = { role: sessionUser.role, permissions: sessionUser.permissions };
+  const canReadPatient = hasPermission(userCtx, 'PATIENT_READ');
 
   const clinicalCase = await prisma.case.findUnique({
     where: { id: caseId },
@@ -51,10 +60,6 @@ export async function GET(
     return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 });
   }
 
-  if (!isFyAlignInternal(sessionUser.role) && clinicalCase.clinicId !== sessionUser.clinicId) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
-
   // Mapear setups resolvendo URLs temporárias dos modelos para cada estágio
   const enrichedSetups = clinicalCase.setups.map((setup: any) => ({
     ...setup,
@@ -76,10 +81,29 @@ export async function GET(
     })),
   }));
 
+  const sanitizedPatient = canReadPatient
+    ? {
+        ...clinicalCase.patient,
+        patientCode: formatPatientCode(clinicalCase.patient.id),
+        piiMinimized: false,
+      }
+    : {
+        id: clinicalCase.patient.id,
+        patientCode: formatPatientCode(clinicalCase.patient.id),
+        fullName: clinicalCase.patient.fullName,
+        birthDate: null,
+        gender: null,
+        phone: null,
+        email: null,
+        tcleSigned: clinicalCase.patient.tcleSigned,
+        clinicId: clinicalCase.patient.clinicId,
+        piiMinimized: true,
+      };
+
   return NextResponse.json({
     caseId,
     caseCode: clinicalCase.caseCode,
-    patient: clinicalCase.patient,
+    patient: sanitizedPatient,
     doctor: clinicalCase.doctor,
     setups: enrichedSetups,
     activeSetup: enrichedSetups[0] || null,
@@ -90,19 +114,19 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const sessionUser = await getCurrentUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-  }
-
-  if (!isFyAlignInternal(sessionUser.role) && sessionUser.role !== 'DOCTOR') {
-    return NextResponse.json(
-      { error: 'Apenas planejadores do laboratório ou cirurgiões autorizados podem submeter novos setups.' },
-      { status: 403 }
-    );
-  }
-
   const caseId = params.id;
+
+  const auth = await authorize(req, {
+    permission: 'SETUP_PUBLISH',
+    resource: { type: 'CASE', id: caseId },
+  });
+
+  if (!auth.authorized) {
+    return auth.response;
+  }
+
+  const sessionUser = auth.user;
+
   const clinicalCase = await prisma.case.findUnique({
     where: { id: caseId },
     include: { setups: true },

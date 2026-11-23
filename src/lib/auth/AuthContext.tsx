@@ -23,6 +23,12 @@ export interface FrontendAuthUser {
   name: string;
   fullName: string;
   email: string;
+  phone?: string | null;
+  mustChangePassword?: boolean;
+  passwordChangedAt?: string | null;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
+  twoFactorEnabled?: boolean;
   role: string;
   permissions: Permission[];
   croStatus: string;
@@ -77,6 +83,9 @@ export function getRequiredRoutePermission(pathname: string): Permission | null 
   if (pathname.startsWith('/dashboard/lab')) {
     return 'PRODUCTION_READ';
   }
+  if (pathname.startsWith('/dashboard/contracts')) {
+    return 'CONTRACT_READ';
+  }
   if (pathname.startsWith('/dashboard/orders')) {
     return 'ORDER_READ';
   }
@@ -95,11 +104,42 @@ export function getRequiredRoutePermission(pathname: string): Permission | null 
   if (/^\/dashboard\/cases\/[^/]+\/upload(\/|$)/.test(pathname)) {
     return 'FILE_READ';
   }
+  if (/^\/dashboard\/cases\/[^/]+\/prescription(\/|$)/.test(pathname)) {
+    return 'FILE_READ';
+  }
   if (pathname.startsWith('/dashboard/cases/')) {
     return 'CASE_READ';
   }
 
   return null;
+}
+
+/**
+ * Valida acesso efetivo de um usuário a uma rota do `/dashboard/*`.
+ * Exceção arquitetural controlada: a rota raiz da Ficha 360° (`/dashboard/cases/[id]`)
+ * também aceita `CONTRACT_READ` para operar no Modo Estritamente Comercial (`COMMERCIAL_ONLY`),
+ * mantendo todas as sub-rotas clínicas (`/upload`, `/setup`, `/prescription`, `/new`) bloqueadas.
+ */
+export function canAccessDashboardRoute(
+  user: { permissions?: readonly string[] | null } | null | undefined,
+  pathname: string
+): boolean {
+  if (!pathname || pathname === '/dashboard') {
+    return true;
+  }
+
+  if (
+    /^\/dashboard\/cases\/[^/]+\/?$/.test(pathname) &&
+    pathname !== '/dashboard/cases/new'
+  ) {
+    return userHasAnyPermission(user, ['CASE_READ', 'CONTRACT_READ']);
+  }
+
+  const required = getRequiredRoutePermission(pathname);
+  if (!required) {
+    return true;
+  }
+  return userHasPermission(user, required);
 }
 
 export function AuthProvider({
@@ -128,4 +168,3 @@ export function AuthProvider({
 export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }
-

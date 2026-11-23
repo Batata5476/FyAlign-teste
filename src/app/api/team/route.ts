@@ -3,6 +3,11 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
+import { hashPassword, generateTemporaryPassword } from '@/lib/auth/password';
+import {
+  getEmailTransportStatus,
+  sendTeamInvitationEmail,
+} from '@/lib/mail/mailer';
 import {
   getAllowedInviteRoles,
   validatePermissionsAgainstCeiling,
@@ -26,7 +31,8 @@ const inviteSchema = z.object({
 
 /**
  * GET /api/team
- * Lista os membros e convites da organização ativa do usuário autenticado com suas permissões granulares.
+ * Lista os membros e convites da organização ativa do usuário autenticado com suas permissões granulares
+ * e diagnóstico de transporte de e-mail.
  */
 export async function GET(req: NextRequest) {
   const auth = await authorize(req, { permission: 'TEAM_READ' });
@@ -46,6 +52,8 @@ export async function GET(req: NextRequest) {
             email: true,
             phone: true,
             isActive: true,
+            mustChangePassword: true,
+            passwordChangedAt: true,
             createdAt: true,
             lastLoginAt: true,
           },
@@ -81,6 +89,7 @@ export async function GET(req: NextRequest) {
         croNumber: m.croNumber,
         croUf: m.croUf,
         croStatus: m.croStatus,
+        mustChangePassword: Boolean(m.user.mustChangePassword),
         permissions: getEffectivePermissions(m),
         createdAt: m.createdAt,
         lastLoginAt: m.user.lastLoginAt,
@@ -88,16 +97,22 @@ export async function GET(req: NextRequest) {
       })),
       invitations: invitations.map((inv: any) => ({
         id: inv.id,
+        fullName: inv.fullName || null,
         email: inv.email,
         role: inv.role,
         status: inv.status,
+        emailDeliveryStatus: inv.emailDeliveryStatus || 'PENDING',
+        emailSentAt: inv.emailSentAt || null,
+        emailError: inv.emailError || null,
         croNumber: inv.croNumber,
         croUf: inv.croUf,
         permissions: inv.permissions.map((p: any) => p.permission),
         expiresAt: inv.expiresAt,
+        acceptedAt: inv.acceptedAt || null,
         createdAt: inv.createdAt,
         invitedByName: inv.invitedBy.fullName,
       })),
+      emailTransport: getEmailTransportStatus(),
       allowedInviteRoles: getAllowedInviteRoles(auth.user.role),
       roleCeilings: ROLE_CEILINGS,
       roleDefaults: ROLE_DEFAULT_PERMISSIONS,
@@ -114,7 +129,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/team
- * Envia um novo convite restrito aos papéis permitidos para o autor.
+ * Cria/provisiona o membro convidado com senha temporária obrigatória no 1º acesso,
+ * registra o convite auditável e dispara o e-mail transacional para o destinatário.
  */
 export async function POST(req: NextRequest) {
   const auth = await authorize(req, { permission: 'TEAM_INVITE' });
@@ -139,6 +155,7 @@ export async function POST(req: NextRequest) {
     }
 
     const emailNormalized = parsed.email.toLowerCase().trim();
+    const fullNameClean = parsed.fullName.trim();
 
     // 1. Verifica se já existe um convite pendente para este email na mesma organização
     const existingPendingInvite = await db.invitation.findFirst({
@@ -152,12 +169,15 @@ export async function POST(req: NextRequest) {
 
     if (existingPendingInvite) {
       return NextResponse.json(
-        { error: 'Já existe um convite pendente ativo para este e-mail nesta clínica.' },
+        {
+          error:
+            'Já existe um convite pendente ativo para este e-mail nesta organização. Utilize "Reenviar Convite" na tabela abaixo caso deseje disparar uma nova senha temporária.',
+        },
         { status: 400 }
       );
     }
 
-    // 2. Verifica se o usuário já possui vínculo com esta clínica
+    // 2. Verifica se o usuário já possui vínculo com esta organização
     const existingUser = await db.user.findUnique({
       where: { email: emailNormalized },
       include: {
@@ -169,7 +189,7 @@ export async function POST(req: NextRequest) {
 
     if (existingUser && existingUser.memberships.length > 0) {
       return NextResponse.json(
-        { error: 'Este usuário já possui um vínculo ativo ou registrado nesta clínica.' },
+        { error: 'Este usuário já possui um vínculo ativo ou registrado nesta organização.' },
         { status: 400 }
       );
     }
@@ -178,7 +198,7 @@ export async function POST(req: NextRequest) {
     const permissionsToGrant: string[] =
       parsed.permissions && parsed.permissions.length > 0
         ? parsed.permissions
-        : (ROLE_DEFAULT_PERMISSIONS[parsed.role as UserRole] || []);
+        : ROLE_DEFAULT_PERMISSIONS[parsed.role as UserRole] || [];
 
     const validation = validatePermissionsAgainstCeiling(parsed.role, permissionsToGrant);
     if (!validation.valid) {
@@ -193,22 +213,98 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Gera hash seguro do token de convite
+    // 4. Define se gera senha temporária (novo usuário ou conta ainda não ativada)
+    const isAlreadyActivatedAccount = Boolean(
+      existingUser && !existingUser.mustChangePassword && existingUser.lastLoginAt
+    );
+
+    const temporaryPassword = isAlreadyActivatedAccount
+      ? null
+      : generateTemporaryPassword(12);
+    const passwordHash = temporaryPassword
+      ? await hashPassword(temporaryPassword)
+      : null;
+
     const rawToken = crypto.randomUUID();
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dias
+    const croUfClean = parsed.croUf ? parsed.croUf.toUpperCase() : null;
+    const croNumberClean = parsed.croNumber ? parsed.croNumber.trim() : null;
 
-    // 5. Persiste convite e suas permissões atreladas em transação
-    const invitation = await db.$transaction(async (tx: any) => {
+    const orgRecord = await db.organization.findUnique({
+      where: { id: auth.user.organizationId },
+      select: { id: true, tradeName: true, type: true },
+    });
+
+    // 5. Persiste User + Membership + Permissões + Invitation em transação atômica
+    const { invitation, provisionedMembershipId } = await db.$transaction(async (tx: any) => {
+      let targetUserId: string;
+
+      if (!existingUser) {
+        const createdUser = await tx.user.create({
+          data: {
+            email: emailNormalized,
+            fullName: fullNameClean,
+            passwordHash: passwordHash!,
+            isActive: true,
+            mustChangePassword: true,
+            role: parsed.role,
+            clinicId: orgRecord?.type === 'CLINIC' ? orgRecord.id : null,
+            professionalIdCro: croNumberClean
+              ? `CRO-${croUfClean || 'BR'} ${croNumberClean}`
+              : null,
+          },
+        });
+        targetUserId = createdUser.id;
+      } else {
+        targetUserId = existingUser.id;
+        if (passwordHash) {
+          await tx.user.update({
+            where: { id: existingUser.id },
+            data: {
+              passwordHash,
+              mustChangePassword: true,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      const createdMembership = await tx.membership.create({
+        data: {
+          userId: targetUserId,
+          organizationId: auth.user.organizationId,
+          role: parsed.role,
+          status: 'ACTIVE',
+          croNumber: croNumberClean,
+          croUf: croUfClean,
+          croStatus: parsed.role === 'DOCTOR' ? 'PENDING' : 'NOT_REQUIRED',
+          invitedById: auth.user.userId,
+        },
+      });
+
+      if (permissionsToGrant.length > 0) {
+        await tx.membershipPermission.createMany({
+          data: permissionsToGrant.map((perm) => ({
+            membershipId: createdMembership.id,
+            permission: perm,
+          })),
+        });
+      }
+
       const inv = await tx.invitation.create({
         data: {
           organizationId: auth.user.organizationId,
+          fullName: fullNameClean,
           email: emailNormalized,
           role: parsed.role,
           tokenHash,
-          croNumber: parsed.croNumber || null,
-          croUf: parsed.croUf ? parsed.croUf.toUpperCase() : null,
-          status: 'PENDING',
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 dias
+          croNumber: croNumberClean,
+          croUf: croUfClean,
+          status: temporaryPassword ? 'PENDING' : 'ACCEPTED',
+          acceptedAt: temporaryPassword ? null : new Date(),
+          emailDeliveryStatus: 'PENDING',
+          expiresAt,
           invitedById: auth.user.userId,
         },
       });
@@ -222,37 +318,77 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      return inv;
+      return { invitation: inv, provisionedMembershipId: createdMembership.id };
     });
 
-    // 6. Registro na Trilha de Auditoria
+    // 6. Dispara o e-mail transacional com a senha temporária (nunca logada em texto puro)
+    const emailResult = await sendTeamInvitationEmail({
+      recipientEmail: emailNormalized,
+      recipientName: fullNameClean,
+      organizationName: orgRecord?.tradeName || auth.user.organizationName,
+      role: parsed.role,
+      invitedByName: auth.user.fullName,
+      temporaryPassword,
+      expiresAt,
+    });
+
+    const updatedInvitation = await db.invitation.update({
+      where: { id: invitation.id },
+      data: {
+        emailDeliveryStatus: emailResult.status,
+        emailSentAt: emailResult.delivered ? new Date() : null,
+        emailError: emailResult.error || null,
+      },
+    });
+
+    // 7. Registro na Trilha de Auditoria
     await db.auditLog.create({
       data: {
         userId: auth.user.userId,
         organizationId: auth.user.organizationId,
+        membershipId: provisionedMembershipId,
         action: 'TEAM_INVITATION_SENT',
         entityAffected: 'Invitation',
         payloadDiff: JSON.stringify({
           invitationId: invitation.id,
           email: emailNormalized,
+          fullName: fullNameClean,
           role: parsed.role,
           grantedPermissions: permissionsToGrant,
+          mustChangePasswordOnFirstLogin: Boolean(temporaryPassword),
+          emailDeliveryStatus: emailResult.status,
+          emailProvider: emailResult.provider,
         }),
         ipAddress: req.ip || req.headers.get('x-forwarded-for') || '127.0.0.1',
         userAgent: req.headers.get('user-agent') || 'FyAlign/Web',
       },
     });
 
+    const responseMessage = emailResult.delivered
+      ? `Convite enviado por e-mail para ${emailNormalized} com senha temporária e exigência de redefinição no 1º acesso.`
+      : `Membro e convite criados para ${emailNormalized}, porém o e-mail não pôde ser entregue (${emailResult.error || 'provedor não configurado'}). Configure o SMTP/Resend e clique em "Reenviar E-mail".`;
+
     return NextResponse.json({
       success: true,
-      message: `Convite enviado com sucesso para ${emailNormalized} com ${permissionsToGrant.length} permissões configuradas.`,
+      message: responseMessage,
+      emailDelivery: {
+        delivered: emailResult.delivered,
+        status: emailResult.status,
+        provider: emailResult.provider,
+        previewUrl: emailResult.previewUrl || null,
+        error: emailResult.error || null,
+      },
       invitation: {
-        id: invitation.id,
-        email: invitation.email,
-        role: invitation.role,
-        status: invitation.status,
+        id: updatedInvitation.id,
+        fullName: updatedInvitation.fullName,
+        email: updatedInvitation.email,
+        role: updatedInvitation.role,
+        status: updatedInvitation.status,
+        emailDeliveryStatus: updatedInvitation.emailDeliveryStatus,
+        emailSentAt: updatedInvitation.emailSentAt,
+        emailError: updatedInvitation.emailError,
         permissions: permissionsToGrant,
-        expiresAt: invitation.expiresAt,
+        expiresAt: updatedInvitation.expiresAt,
       },
     });
   } catch (error: any) {

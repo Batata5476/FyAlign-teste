@@ -60,12 +60,12 @@ export default function CaseUploadPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(`/dashboard/cases/${caseId}`)}
             className="btn-secondary"
             style={{ padding: '8px 12px' }}
           >
             <ArrowLeft size={16} />
-            <span>Voltar</span>
+            <span>Voltar para Ficha 360°</span>
           </button>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

@@ -1,39 +1,54 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { ROLE_DEFAULT_PERMISSIONS, UserRole } from '../src/lib/auth/rbac';
+import { addBusinessDays } from '../src/lib/sla/treatment-sla';
 
 const prisma = new PrismaClient();
 
+async function grantDefaultPermissions(membershipId: string, role: UserRole) {
+  const defaults = ROLE_DEFAULT_PERMISSIONS[role] || [];
+  if (defaults.length === 0) return;
+  await prisma.membershipPermission.createMany({
+    data: defaults.map((permission) => ({
+      membershipId,
+      permission,
+    })),
+  });
+}
+
 async function main() {
-  // ==========================================================================
-  // TRAVA DE SEGURANÇA: NUNCA EXECUTAR EM PRODUÇÃO SEM CONFIRMAÇÃO EXPLÍCITA
-  // ==========================================================================
   if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_SEED_IN_PROD) {
     console.error('❌ ERRO CRÍTICO: Execução de seed bloqueada em ambiente de produção (NODE_ENV=production).');
     process.exit(1);
   }
 
   console.log('========================================================================');
-  console.log('⚠️  AVISO: DEV/SEED ONLY — SEED V2 FYALIGN');
-  console.log('Massa de dados para cenários realistas de testes, RBAC e fluxo clínico.');
+  console.log('⚠️  AVISO: DEV/SEED ONLY — SEED V3 FYALIGN (FASE B COMPLETA)');
+  console.log('Massa consistente: Personas reais, RBAC granular, Ficha 360°, OS e Contratos.');
   console.log('========================================================================\n');
 
   console.log('🧹 1. Limpando modelos anteriores respeitando a integridade referencial...');
 
-  // 1. Limpeza dos novos modelos clínicos estruturados e sessões (evita órfãos e conflitos @unique em caseId)
+  // Fase B: Eventos, Links Externos e Solicitações Operacionais
+  await prisma.operationalEvent.deleteMany();
+  await prisma.externalSystemLink.deleteMany();
+  await prisma.serviceOrder.deleteMany();
+
+  // Clínicos estruturados e sessões
   await prisma.caseConsent.deleteMany();
   await prisma.treatmentPlan.deleteMany();
   await prisma.clinicalCondition.deleteMany();
   await prisma.session.deleteMany();
 
-  // 2. Limpeza dos modelos de produção, contratos e remessas (Arquitetura Final v1.0)
-  await (prisma as any).shipmentItem?.deleteMany();
-  await (prisma as any).shipment?.deleteMany();
-  await (prisma as any).productionUnit?.deleteMany();
-  await (prisma as any).refinementRequest?.deleteMany();
-  await (prisma as any).contractVersion?.deleteMany();
-  await (prisma as any).caseCommercialContract?.deleteMany();
+  // Produção, contratos e remessas
+  await prisma.shipmentItem.deleteMany();
+  await prisma.shipment.deleteMany();
+  await prisma.productionUnit.deleteMany();
+  await prisma.refinementRequest.deleteMany();
+  await prisma.contractVersion.deleteMany();
+  await prisma.caseCommercialContract.deleteMany();
 
-  // 3. Limpeza de agregados e relacionamentos dependentes de Case, Setup e User
+  // Agregados e relacionamentos dependentes
   await prisma.caseAssignment.deleteMany();
   await prisma.invitation.deleteMany();
   await prisma.auditLog.deleteMany();
@@ -43,9 +58,10 @@ async function main() {
   await prisma.setup.deleteMany();
   await prisma.caseFile.deleteMany();
 
-  // 3. Limpeza dos nós centrais
+  // Nós centrais e RBAC
   await prisma.case.deleteMany();
   await prisma.patient.deleteMany();
+  await prisma.membershipPermission.deleteMany();
   await prisma.membership.deleteMany();
   await prisma.user.deleteMany();
   await prisma.organization.deleteMany();
@@ -53,13 +69,15 @@ async function main() {
   console.log('✓ Banco de dados limpo com sucesso!\n');
 
   const defaultPasswordHash = await bcrypt.hash('Password@123', 10);
+  const now = new Date();
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
+  const daysAhead = (d: number) => new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
 
   // ==========================================================================
   // 1. ORGANIZAÇÕES (Tenants: Matriz FyAlign e Clínicas Parceiras A e B)
   // ==========================================================================
   console.log('🏢 2. Criando Organizações (Tenants)...');
 
-  // Matriz do Laboratório
   const fyAlignOrg = await prisma.organization.create({
     data: {
       type: 'FYALIGN',
@@ -75,7 +93,6 @@ async function main() {
     },
   });
 
-  // Clínica A: OdontoPrime Ortodontia (Clínica Principal)
   const clinicOrg = await prisma.organization.create({
     data: {
       type: 'CLINIC',
@@ -91,7 +108,6 @@ async function main() {
     },
   });
 
-  // Clínica B: Sorriso Dental Sul (Para validação rigorosa de isolamento Multi-Tenant / Anti-IDOR)
   const clinicBetaOrg = await prisma.organization.create({
     data: {
       type: 'CLINIC',
@@ -110,11 +126,10 @@ async function main() {
   console.log(`✓ Organizações criadas: ${fyAlignOrg.tradeName}, ${clinicOrg.tradeName} e ${clinicBetaOrg.tradeName}`);
 
   // ==========================================================================
-  // 2. USUÁRIOS (Pessoas Físicas - Identidades Centrais)
+  // 2. USUÁRIOS (Personas Reais da Operação + Contas de Compatibilidade de Suíte)
   // ==========================================================================
-  console.log('👤 3. Criando Usuários (Pessoas Físicas)...');
+  console.log('👤 3. Criando Usuários e Personas Operacionais...');
 
-  // Super Admin do Laboratório
   const superAdmin = await prisma.user.create({
     data: {
       fullName: 'Administrador FyAlign',
@@ -126,7 +141,49 @@ async function main() {
     },
   });
 
-  // Planejador CAD 3D do Laboratório
+  // Personas Reais da Matriz FyAlign
+  const felipeUser = await prisma.user.create({
+    data: {
+      fullName: 'Felipe Martins (Conferência, Nemo & Produção)',
+      email: 'felipe@fyalign.com',
+      passwordHash: defaultPasswordHash,
+      isActive: true,
+      role: 'PRODUCTION_QC',
+    },
+  });
+
+  const adrianoUser = await prisma.user.create({
+    data: {
+      fullName: 'Dr. Adriano Nogueira (Planejador 3D)',
+      email: 'adriano@fyalign.com',
+      passwordHash: defaultPasswordHash,
+      isActive: true,
+      role: 'PLANNER_3D',
+      professionalIdCro: 'CRO-SP 774411',
+    },
+  });
+
+  const laisUser = await prisma.user.create({
+    data: {
+      fullName: 'Laís Oliveira (Comercial & Relacionamento)',
+      email: 'lais@fyalign.com',
+      passwordHash: defaultPasswordHash,
+      isActive: true,
+      role: 'SUPPORT',
+    },
+  });
+
+  const pauloUser = await prisma.user.create({
+    data: {
+      fullName: 'Dr. Paulo Henrique (Financeiro & Contratos)',
+      email: 'paulo@fyalign.com',
+      passwordHash: defaultPasswordHash,
+      isActive: true,
+      role: 'FINANCE',
+    },
+  });
+
+  // Contas de compatibilidade para suítes automatizadas existentes
   const planner = await prisma.user.create({
     data: {
       fullName: 'Lucas Mendes (Planejador CAD 3D)',
@@ -137,7 +194,6 @@ async function main() {
     },
   });
 
-  // Controle de Qualidade Fabril
   const productionQc = await prisma.user.create({
     data: {
       fullName: 'Carlos Almeida (Controle de Qualidade)',
@@ -148,7 +204,6 @@ async function main() {
     },
   });
 
-  // Financeiro do Laboratório (Mantido para testes de permissão RBAC futuros)
   const finance = await prisma.user.create({
     data: {
       fullName: 'Beatriz Lima (Financeiro FyAlign)',
@@ -159,7 +214,6 @@ async function main() {
     },
   });
 
-  // Suporte Operacional do Laboratório
   const support = await prisma.user.create({
     data: {
       fullName: 'Thiago Rocha (Suporte Operacional)',
@@ -170,7 +224,7 @@ async function main() {
     },
   });
 
-  // Dr. Roberto Silva — Doutor Habilitado da Clínica OdontoPrime (Possui 2 memberships: DOCTOR e CLINIC_ADMIN)
+  // Clínicas Parceiras
   const doctor = await prisma.user.create({
     data: {
       fullName: 'Dr. Roberto Silva',
@@ -185,7 +239,6 @@ async function main() {
     },
   });
 
-  // Assistente da Clínica OdontoPrime
   const assistant = await prisma.user.create({
     data: {
       fullName: 'Larissa Ferreira (Assistente)',
@@ -198,7 +251,6 @@ async function main() {
     },
   });
 
-  // Dr. Rafael Pendente — Doutor com CRO Pendente de validação (Testa regra RN-02: pode criar rascunho, mas não submeter)
   const doctorRafael = await prisma.user.create({
     data: {
       fullName: 'Dr. Rafael Pendente',
@@ -212,7 +264,6 @@ async function main() {
     },
   });
 
-  // Dra. Camila Sul — Doutora da Clínica Sorriso Dental Sul (Clínica B / Multi-Tenant Isolation)
   const doctorCamila = await prisma.user.create({
     data: {
       fullName: 'Dra. Camila Sul',
@@ -226,15 +277,14 @@ async function main() {
     },
   });
 
-  console.log('✓ Usuários pessoas físicas criados.');
+  console.log('✓ Usuários e personas criados.');
 
   // ==========================================================================
-  // 3. VÍNCULOS (Memberships: Ligação User <-> Organization com Roles e CRO)
+  // 3. VÍNCULOS (Memberships + Permissões Granulares Explícitas)
   // ==========================================================================
-  console.log('🔗 4. Criando Vínculos (Memberships com Roles e CRO)...');
+  console.log('🔗 4. Criando Vínculos e Permissões Granulares...');
 
-  // Membros da FyAlign Matriz
-  await prisma.membership.create({
+  const superAdminMembership = await prisma.membership.create({
     data: {
       userId: superAdmin.id,
       organizationId: fyAlignOrg.id,
@@ -243,6 +293,51 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(superAdminMembership.id, 'SUPER_ADMIN');
+
+  const felipeMembership = await prisma.membership.create({
+    data: {
+      userId: felipeUser.id,
+      organizationId: fyAlignOrg.id,
+      role: 'PRODUCTION_QC',
+      status: 'ACTIVE',
+      croStatus: 'NOT_REQUIRED',
+    },
+  });
+  await grantDefaultPermissions(felipeMembership.id, 'PRODUCTION_QC');
+
+  const adrianoMembership = await prisma.membership.create({
+    data: {
+      userId: adrianoUser.id,
+      organizationId: fyAlignOrg.id,
+      role: 'PLANNER_3D',
+      status: 'ACTIVE',
+      croStatus: 'NOT_REQUIRED',
+    },
+  });
+  await grantDefaultPermissions(adrianoMembership.id, 'PLANNER_3D');
+
+  const laisMembership = await prisma.membership.create({
+    data: {
+      userId: laisUser.id,
+      organizationId: fyAlignOrg.id,
+      role: 'SUPPORT',
+      status: 'ACTIVE',
+      croStatus: 'NOT_REQUIRED',
+    },
+  });
+  await grantDefaultPermissions(laisMembership.id, 'SUPPORT');
+
+  const pauloMembership = await prisma.membership.create({
+    data: {
+      userId: pauloUser.id,
+      organizationId: fyAlignOrg.id,
+      role: 'FINANCE',
+      status: 'ACTIVE',
+      croStatus: 'NOT_REQUIRED',
+    },
+  });
+  await grantDefaultPermissions(pauloMembership.id, 'FINANCE');
 
   const plannerMembership = await prisma.membership.create({
     data: {
@@ -253,8 +348,9 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(plannerMembership.id, 'PLANNER_3D');
 
-  await prisma.membership.create({
+  const qcMembership = await prisma.membership.create({
     data: {
       userId: productionQc.id,
       organizationId: fyAlignOrg.id,
@@ -263,8 +359,9 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(qcMembership.id, 'PRODUCTION_QC');
 
-  await prisma.membership.create({
+  const financeMembership = await prisma.membership.create({
     data: {
       userId: finance.id,
       organizationId: fyAlignOrg.id,
@@ -273,8 +370,9 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(financeMembership.id, 'FINANCE');
 
-  await prisma.membership.create({
+  const supportMembership = await prisma.membership.create({
     data: {
       userId: support.id,
       organizationId: fyAlignOrg.id,
@@ -283,9 +381,8 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(supportMembership.id, 'SUPPORT');
 
-  // Membros da Clínica OdontoPrime (Clínica A)
-  // Dr. Roberto: DOCTOR com CRO Verificado
   const doctorMembership = await prisma.membership.create({
     data: {
       userId: doctor.id,
@@ -295,12 +392,12 @@ async function main() {
       croNumber: '102938',
       croUf: 'SP',
       croStatus: 'VERIFIED',
-      croVerifiedAt: new Date(),
+      croVerifiedAt: daysAgo(90),
     },
   });
+  await grantDefaultPermissions(doctorMembership.id, 'DOCTOR');
 
-  // Dr. Roberto: também acumula papel CLINIC_ADMIN na mesma clínica (Multi-Membership Test)
-  await prisma.membership.create({
+  const doctorAdminMembership = await prisma.membership.create({
     data: {
       userId: doctor.id,
       organizationId: clinicOrg.id,
@@ -309,9 +406,9 @@ async function main() {
       croStatus: 'NOT_REQUIRED',
     },
   });
+  await grantDefaultPermissions(doctorAdminMembership.id, 'CLINIC_ADMIN');
 
-  // Assistente Larissa
-  await prisma.membership.create({
+  const assistantMembership = await prisma.membership.create({
     data: {
       userId: assistant.id,
       organizationId: clinicOrg.id,
@@ -321,8 +418,8 @@ async function main() {
       invitedById: doctor.id,
     },
   });
+  await grantDefaultPermissions(assistantMembership.id, 'CLINIC_ASSISTANT');
 
-  // Dr. Rafael: DOCTOR com CRO PENDING (Cenário RN-02: CRO pendente de homologação)
   const doctorRafaelMembership = await prisma.membership.create({
     data: {
       userId: doctorRafael.id,
@@ -334,9 +431,8 @@ async function main() {
       croStatus: 'PENDING',
     },
   });
+  await grantDefaultPermissions(doctorRafaelMembership.id, 'DOCTOR');
 
-  // Membros da Clínica B (Sorriso Dental Sul)
-  // Dra. Camila: DOCTOR com CRO Verificado no PR (Cenário Multi-Tenant)
   const doctorCamilaMembership = await prisma.membership.create({
     data: {
       userId: doctorCamila.id,
@@ -346,18 +442,18 @@ async function main() {
       croNumber: '554433',
       croUf: 'PR',
       croStatus: 'VERIFIED',
-      croVerifiedAt: new Date(),
+      croVerifiedAt: daysAgo(60),
     },
   });
+  await grantDefaultPermissions(doctorCamilaMembership.id, 'DOCTOR');
 
-  console.log('✓ Vínculos (Memberships) com isolamento multi-tenant e status de CRO criados.');
+  console.log('✓ Vínculos e permissões granulares criados.');
 
   // ==========================================================================
-  // 4. PACIENTES
+  // 4. PACIENTES & VÍNCULOS COM PRONTUÁRIO EXTERNO DA CLÍNICA
   // ==========================================================================
-  console.log('👥 5. Criando Pacientes...');
+  console.log('👥 5. Criando Pacientes e Vínculos ERP...');
 
-  // Paciente 1: Mariana Costa (Clínica OdontoPrime - Caso Completo 001)
   const patient1 = await prisma.patient.create({
     data: {
       clinicId: clinicOrg.id,
@@ -366,11 +462,24 @@ async function main() {
       gender: 'Feminino',
       phone: '(11) 98765-4321',
       email: 'mariana.costa@email.com',
-      tcleSigned: true, // Compatibilidade com campo legado
+      tcleSigned: true,
     },
   });
 
-  // Paciente 2: Gabriel Ramos Santos (Clínica OdontoPrime - Paciente de Teste do Wizard)
+  await prisma.externalSystemLink.create({
+    data: {
+      organizationId: clinicOrg.id,
+      entityType: 'PATIENT',
+      provider: 'CLINICORP',
+      patientId: patient1.id,
+      externalId: '4821',
+      secondaryCode: 'PRONT-2026-88',
+      externalUrl: 'https://app.clinicorp.com/pacientes/4821',
+      syncStatus: 'LINKED',
+      createdById: doctor.id,
+    },
+  });
+
   const patient2 = await prisma.patient.create({
     data: {
       clinicId: clinicOrg.id,
@@ -383,7 +492,6 @@ async function main() {
     },
   });
 
-  // Paciente 3: Lucas Fernandes (Clínica OdontoPrime - Caso 003 SUBMITTED)
   const patient3 = await prisma.patient.create({
     data: {
       clinicId: clinicOrg.id,
@@ -396,7 +504,6 @@ async function main() {
     },
   });
 
-  // Paciente 4: Juliana Paes Mendes (Clínica OdontoPrime - Caso 004 CRO Pendente)
   const patient4 = await prisma.patient.create({
     data: {
       clinicId: clinicOrg.id,
@@ -409,7 +516,6 @@ async function main() {
     },
   });
 
-  // Paciente 5: Roberto Carlos da Silva (Clínica B / Sorriso Dental Sul - Caso 005 Isolamento Tenant)
   const patient5 = await prisma.patient.create({
     data: {
       clinicId: clinicBetaOrg.id,
@@ -422,11 +528,33 @@ async function main() {
     },
   });
 
-  console.log('✓ Pacientes criados para todos os cenários.');
+  const patient6 = await prisma.patient.create({
+    data: {
+      clinicId: clinicOrg.id,
+      fullName: 'Beatriz Cavalcanti',
+      birthDate: new Date('1993-02-18'),
+      gender: 'Feminino',
+      phone: '(11) 99123-4567',
+      email: 'beatriz.cavalcanti@email.com',
+      tcleSigned: true,
+    },
+  });
 
-  // ==========================================================================
-  // HELPER: Gerador dos 13 Arquivos Padronizados (Slots 1 a 13)
-  // ==========================================================================
+  await prisma.externalSystemLink.create({
+    data: {
+      organizationId: clinicOrg.id,
+      entityType: 'PATIENT',
+      provider: 'SIMPLES_DENTAL',
+      patientId: patient6.id,
+      externalId: 'SD-9920',
+      secondaryCode: 'AG-310',
+      syncStatus: 'LINKED',
+      createdById: doctor.id,
+    },
+  });
+
+  console.log('✓ Pacientes criados.');
+
   function generate13SlotFiles(caseId: string, uploaderUserId: string) {
     const slots = [
       { slot: 1, cat: 'EXTRAORAL', type: 'PHOTO_FRONTAL_REST', name: 'foto_frontal_repouso.jpg', mime: 'image/jpeg', size: 2450000 },
@@ -450,7 +578,7 @@ async function main() {
       category: item.cat,
       type: item.type,
       originalFileName: item.name,
-      storageKey: `cases/${caseId}/slots/slot_${item.slot}_${item.name}`,
+      storageKey: `clinics/seed/cases/${caseId}/slot_${item.slot}_${item.name}`,
       mimeType: item.mime,
       fileSizeBytes: item.size,
       fileHashSha256: `sha256-mock-hash-slot-${item.slot}-${caseId.slice(0, 8)}`,
@@ -460,13 +588,392 @@ async function main() {
   }
 
   // ==========================================================================
-  // 5. CENÁRIOS DE TESTE OFICIAIS DO FYALIGN
+  // 5. CENÁRIOS CLÍNICOS, OPERACIONAIS E COMERCIAIS (B1–B4)
   // ==========================================================================
-  console.log('🧪 6. Criando os 5 Cenários de Teste do Workflow Clínico...');
+  console.log('🧪 6. Criando Tratamentos, Contratos, OS, Lotes e Eventos...');
 
   // --------------------------------------------------------------------------
-  // CENÁRIO 1: Caso 001 — COMPLETO / AVANÇADO (FY-2026-001)
-  // Serve para testar: Dashboard, Planner CAD 3D, Viewer, Aprovação e Setup
+  // CENÁRIO 1A: Mariana Costa — Tratamento FY-2026-006 (IN_PRODUCTION — Ciclo Completo Fase B)
+  // Possui: Setup Inicial Aprovado + Contrato Confirmado + LOTE-01 entregue +
+  //         2ª Leva em RECEIVED (pronta p/ conferência de Felipe) +
+  //         Refinamento #1 Coberto + Refinamento #2 Extra aguardando Dr. Paulo!
+  // --------------------------------------------------------------------------
+  const caseMarianaFull = await prisma.case.create({
+    data: {
+      caseCode: 'FY-2026-006',
+      patientId: patient1.id,
+      doctorId: doctor.id,
+      doctorMembershipId: doctorMembership.id,
+      clinicId: clinicOrg.id,
+      status: 'IN_PRODUCTION',
+      treatedArches: 'BOTH',
+      chiefComplaint: 'Apinhamento bimaxilar com correção de linha média inferior.',
+      angleClass: 'Classe I',
+      restrictedTeethFdi: JSON.stringify([]),
+      doctorNotes: 'Tratamento híbrido 24 pares em andamento clínico.',
+      assignedPlannerId: adrianoUser.id,
+      submittedAt: daysAgo(75),
+      approvedAt: daysAgo(70),
+    },
+  });
+
+  await prisma.clinicalCondition.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      upperMidline: 'CENTERED',
+      lowerMidline: 'DEVIATED_LEFT',
+      canineRight: 'CLASS_I',
+      canineLeft: 'CLASS_I',
+      molarRight: 'CLASS_I',
+      molarLeft: 'CLASS_I',
+    },
+  });
+
+  await prisma.treatmentPlan.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      upperMidline: 'MAINTAIN',
+      lowerMidline: 'IMPROVE',
+      overjet: 'IMPROVE',
+      overbite: 'IMPROVE',
+      archForm: 'MAINTAIN',
+      expansion: 'IMPROVE',
+      canineRelationship: 'MAINTAIN',
+      molarRelationship: 'MAINTAIN',
+      ipr: true,
+      attachment: true,
+      intermaxillaryElastic: 'NO',
+      classIICorrection: 'DO_NOT_CORRECT',
+      classIIICorrection: 'DO_NOT_CORRECT',
+      diastemas: 'NONE',
+      additionalInstructions: 'Execução em 2 levas de 12 alinhadores.',
+    },
+  });
+
+  await prisma.caseConsent.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      policyVersion: 'v1.0',
+      policyHash: 'seed-policy-hash-mariana-006',
+      acceptedAt: daysAgo(75),
+      ipAddress: '127.0.0.1',
+      userAgent: 'FyAlign Seed/3.0',
+      scrollCompleted: true,
+      signatureKey: 'seed-sigkey-mariana-006',
+      signatureHash: 'seed-sighash-mariana-006',
+    },
+  });
+
+  for (const fileData of generate13SlotFiles(caseMarianaFull.id, doctor.id)) {
+    await prisma.caseFile.create({ data: fileData });
+  }
+
+  await prisma.setup.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      versionNumber: 1,
+      status: 'APPROVED',
+      upperAlignersCount: 24,
+      lowerAlignersCount: 24,
+      approvedAt: daysAgo(70),
+      plannerComments: 'Setup inicial v1 de 24 pares aprovado pelo Dr. Roberto.',
+    },
+  });
+
+  const contractMarianaFull = await prisma.caseCommercialContract.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      contractCode: 'CTR-2026-1001',
+      versionNumber: 1,
+      status: 'CONFIRMED',
+      packageName: 'FyAlign Híbrido 24 Pares + 1 Refinamento',
+      contractedAligners: 24,
+      totalPriceCents: 420000,
+      currency: 'BRL',
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 1,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 16000,
+      setupSlaBusinessDays: 3,
+      productionSlaDays: 10,
+      productionSlaDayType: 'BUSINESS_DAYS',
+      commercialNotes: 'Faturamento B2B aprovado pela OdontoPrime.',
+      confirmedById: pauloUser.id,
+      confirmedAt: daysAgo(69),
+    },
+  });
+
+  await prisma.contractVersion.create({
+    data: {
+      contractId: contractMarianaFull.id,
+      versionNumber: 1,
+      contractedAligners: 24,
+      totalPriceCents: 420000,
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 1,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 16000,
+      setupSlaBusinessDays: 3,
+      productionSlaDays: 10,
+      productionSlaDayType: 'BUSINESS_DAYS',
+      snapshotJson: JSON.stringify({ contractCode: 'CTR-2026-1001', totalPriceCents: 420000 }),
+      changeReason: 'Confirmação inicial do contrato comercial v1.',
+      changedById: pauloUser.id,
+      createdAt: daysAgo(69),
+    },
+  });
+
+  const unitMarianaLote1 = await prisma.productionUnit.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      contractId: contractMarianaFull.id,
+      unitCode: 'LOTE-01',
+      type: 'BATCH',
+      quantityPairs: 12,
+      shippedQuantity: 12,
+      stagesDescription: 'Alinhadores 01 a 12 (1ª Leva)',
+      status: 'SHIPPED',
+      qcApprovedById: felipeUser.id,
+      qcApprovedAt: daysAgo(63),
+    },
+  });
+
+  const shipMariana1 = await prisma.shipment.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      shipmentCode: 'REM-2026-101',
+      carrierName: 'Jadlog Expresso',
+      trackingCode: 'BR9911223344FY',
+      status: 'DELIVERED',
+      shippedAt: daysAgo(62),
+      deliveredAt: daysAgo(60),
+      dispatchedById: laisUser.id,
+    },
+  });
+
+  await prisma.shipmentItem.create({
+    data: {
+      shipmentId: shipMariana1.id,
+      productionUnitId: unitMarianaLote1.id,
+      quantityShipped: 12,
+    },
+  });
+
+  // OS-01: Pedido Inicial (Concluída no prazo)
+  const soMariana1 = await prisma.serviceOrder.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      orderNumber: `${caseMarianaFull.caseCode}-OS-01`,
+      sequenceNumber: 1,
+      type: 'INITIAL',
+      status: 'DELIVERED',
+      title: 'Pedido Inicial — Alinhadores 1 a 12',
+      alignerRangeStart: 1,
+      alignerRangeEnd: 12,
+      requiresNewBudget: false,
+      nemoStatus: 'INSERTED',
+      nemoCaseId: 'NEMO-2026-106',
+      nemoInsertedAt: daysAgo(74),
+      nemoInsertedById: felipeUser.id,
+      docsVerifiedAt: daysAgo(74),
+      docsVerifiedById: felipeUser.id,
+      receivedAt: daysAgo(75),
+      setupDueAt: daysAgo(71),
+      setupSentAt: daysAgo(72),
+      approvedAt: daysAgo(70),
+      productionReleasedAt: daysAgo(69),
+      productionReleasedById: felipeUser.id,
+      productionDueAt: daysAgo(58),
+      completedAt: daysAgo(62),
+      requestedById: doctor.id,
+    },
+  });
+
+  await prisma.externalSystemLink.create({
+    data: {
+      organizationId: fyAlignOrg.id,
+      entityType: 'SERVICE_ORDER',
+      provider: 'NEMO',
+      caseId: caseMarianaFull.id,
+      serviceOrderId: soMariana1.id,
+      externalId: 'NEMO-2026-106',
+      syncStatus: 'LINKED',
+      createdById: felipeUser.id,
+    },
+  });
+
+  // OS-02: Segunda Leva aberta pelo Dr. Roberto (RECEIVED — pronta para Felipe conferir e programar!)
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      orderNumber: `${caseMarianaFull.caseCode}-OS-02`,
+      sequenceNumber: 2,
+      type: 'SECOND_BATCH',
+      status: 'RECEIVED',
+      title: 'Segunda Leva — Alinhadores 13 a 24',
+      alignerRangeStart: 13,
+      alignerRangeEnd: 24,
+      requiresNewBudget: false,
+      nemoStatus: 'NOT_REQUIRED',
+      receivedAt: daysAgo(1),
+      notes: 'Paciente no estágio 10 com excelente adaptação. Solicito preparação da 2ª leva.',
+      requestedById: doctor.id,
+    },
+  });
+
+  // Refinamento #1 Coberto pela Franquia + OS-03 (DUE_SOON)
+  const refMariana1 = await prisma.refinementRequest.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      contractId: contractMarianaFull.id,
+      sequenceNumber: 1,
+      contractVersionUsed: 1,
+      clinicalReason: 'Ajuste fino de torque palatino do incisivo lateral 22.',
+      clinicalStatus: 'REQUESTED',
+      isCoveredByContract: true,
+      extraAlignersCount: 4,
+      extraAmountChargedCents: 0,
+      commercialStatus: 'COMMERCIALLY_APPROVED',
+      requestedById: doctor.id,
+      commerciallyApprovedById: pauloUser.id,
+      commerciallyApprovedAt: daysAgo(2),
+    },
+  });
+
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      refinementRequestId: refMariana1.id,
+      orderNumber: `${caseMarianaFull.caseCode}-OS-03`,
+      sequenceNumber: 3,
+      type: 'REFINEMENT',
+      status: 'IN_PLANNING',
+      title: 'Refinamento #1 — Ajuste fino de torque no 22',
+      requiresNewBudget: false,
+      nemoStatus: 'INSERTED',
+      nemoCaseId: 'NEMO-2026-106-R1',
+      nemoInsertedAt: daysAgo(2),
+      nemoInsertedById: felipeUser.id,
+      docsVerifiedAt: daysAgo(2),
+      docsVerifiedById: felipeUser.id,
+      receivedAt: daysAgo(2),
+      setupDueAt: daysAhead(0.5), // Vence em ~12h -> DUE_SOON!
+      requestedById: doctor.id,
+    },
+  });
+
+  // Refinamento #2 Extra-Franquia + OS-04 aguardando aprovação comercial de Dr. Paulo
+  const refMariana2 = await prisma.refinementRequest.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      contractId: contractMarianaFull.id,
+      sequenceNumber: 2,
+      contractVersionUsed: 1,
+      clinicalReason: 'Sobrecorreção adicional de rotação distal do canino 43.',
+      clinicalStatus: 'CLINICALLY_APPROVED',
+      isCoveredByContract: false,
+      extraAlignersCount: 4,
+      extraAmountChargedCents: 64000,
+      commercialStatus: 'PENDING_COMMERCIAL_APPROVAL',
+      requestedById: doctor.id,
+    },
+  });
+
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: caseMarianaFull.id,
+      refinementRequestId: refMariana2.id,
+      orderNumber: `${caseMarianaFull.caseCode}-OS-04`,
+      sequenceNumber: 4,
+      type: 'REFINEMENT',
+      status: 'WAITING_PAYMENT',
+      title: 'Refinamento #2 (Extra-Franquia) — Sobrecorreção do 43',
+      requiresNewBudget: true,
+      nemoStatus: 'INSERTED',
+      nemoCaseId: 'NEMO-2026-106-R2',
+      nemoInsertedAt: daysAgo(1),
+      nemoInsertedById: felipeUser.id,
+      docsVerifiedAt: daysAgo(1),
+      docsVerifiedById: felipeUser.id,
+      receivedAt: daysAgo(1),
+      setupDueAt: daysAgo(0.2),
+      setupSentAt: daysAgo(0.5),
+      approvedAt: daysAgo(0.3),
+      requestedById: doctor.id,
+    },
+  });
+
+  // Eventos operacionais vs comerciais rigorosamente separados (zero vazamento de R$ para Felipe/Dr. Adriano!)
+  await prisma.operationalEvent.createMany({
+    data: [
+      {
+        caseId: caseMarianaFull.id,
+        serviceOrderId: soMariana1.id,
+        eventType: 'DOCS_VERIFIED',
+        channel: 'INTERNAL',
+        summary: 'Conferência documental e malhas STL validadas sem distorções',
+        isInternalOnly: true,
+        recordedById: felipeUser.id,
+        occurredAt: daysAgo(74),
+      },
+      {
+        caseId: caseMarianaFull.id,
+        serviceOrderId: soMariana1.id,
+        eventType: 'SETUP_SENT',
+        channel: 'WHATSAPP',
+        summary: 'Link do Setup Virtual v1 enviado ao Dr. Roberto via WhatsApp',
+        isInternalOnly: false,
+        recordedById: laisUser.id,
+        occurredAt: daysAgo(72),
+      },
+      {
+        caseId: caseMarianaFull.id,
+        serviceOrderId: soMariana1.id,
+        eventType: 'CONTRACT_CONFIRMED',
+        channel: 'INTERNAL',
+        summary: 'Contrato CTR-2026-1001 confirmado (R$ 4.200,00 — 24 pares)',
+        details: 'Condição B2B OdontoPrime validada pelo Financeiro.',
+        isInternalOnly: false,
+        recordedById: pauloUser.id,
+        occurredAt: daysAgo(69),
+      },
+      {
+        caseId: caseMarianaFull.id,
+        serviceOrderId: soMariana1.id,
+        eventType: 'SHIPMENT_NOTIFIED',
+        channel: 'WHATSAPP',
+        summary: 'Rastreio Jadlog BR9911223344FY da 1ª Leva informado à clínica',
+        isInternalOnly: false,
+        recordedById: laisUser.id,
+        occurredAt: daysAgo(62),
+      },
+      {
+        caseId: caseMarianaFull.id,
+        eventType: 'SECOND_BATCH_REQUESTED',
+        channel: 'PORTAL',
+        summary: 'Segunda Leva solicitada pelo Ortodontista (FY-2026-006-OS-02): alinhadores 13 a 24 — aguardando conferência interna',
+        isInternalOnly: false,
+        recordedById: doctor.id,
+        occurredAt: daysAgo(1),
+      },
+      {
+        caseId: caseMarianaFull.id,
+        eventType: 'BUDGET_SENT',
+        channel: 'WHATSAPP',
+        summary: 'Orçamento complementar do Refinamento #2 (R$ 640,00 — 4 pares extras) enviado à clínica',
+        isInternalOnly: false,
+        recordedById: laisUser.id,
+        occurredAt: daysAgo(0.4),
+      },
+    ],
+  });
+
+  // --------------------------------------------------------------------------
+  // CENÁRIO 1B: Mariana Costa — Segundo Tratamento FY-2026-001 (SETUP_AVAILABLE + Contrato DRAFT)
+  // Mantém compatibilidade integral com suítes existentes E demonstra o bloqueio categórico
+  // de Segunda Leva / Refinamento enquanto Setup não aprovado + Contrato em DRAFT!
   // --------------------------------------------------------------------------
   const case1 = await prisma.case.create({
     data: {
@@ -479,16 +986,15 @@ async function main() {
       treatedArches: 'BOTH',
       chiefComplaint: 'Apinhamento moderado anterior superior e mordida profunda.',
       angleClass: 'Classe II Div 1',
-      restrictedTeethFdi: JSON.stringify(['16']), // Molar 16 possui implante (não movimentar)
+      restrictedTeethFdi: JSON.stringify(['16']),
       iprPreferences: JSON.stringify({ allowed: true, maxPerContactMm: 0.3 }),
       attachmentPreferences: JSON.stringify({ allowed: true, avoidAnterior: true }),
       doctorNotes: 'Paciente prioriza estética. Alinhar bateria anterior e corrigir sobremordida sem sobre-projeção dos incisivos inferiores.',
       assignedPlannerId: planner.id,
-      submittedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      submittedAt: daysAgo(3),
     },
   });
 
-  // Condição Clínica Existente do Caso 1
   await prisma.clinicalCondition.create({
     data: {
       caseId: case1.id,
@@ -501,7 +1007,6 @@ async function main() {
     },
   });
 
-  // Plano de Tratamento Parametrizado do Caso 1
   await prisma.treatmentPlan.create({
     data: {
       caseId: case1.id,
@@ -524,27 +1029,24 @@ async function main() {
     },
   });
 
-  // Termo de Consentimento Legal (CaseConsent - Fonte da Verdade) do Caso 1
   await prisma.caseConsent.create({
     data: {
       caseId: case1.id,
       policyVersion: 'v1.0',
       policyHash: 'seed-policy-hash-v1-mariana-2026',
-      acceptedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      acceptedAt: daysAgo(3),
       ipAddress: '127.0.0.1',
-      userAgent: 'FyAlign Seed/2.0 (Mozilla/5.0 Chrome/120.0)',
+      userAgent: 'FyAlign Seed/3.0',
       scrollCompleted: true,
       signatureKey: 'seed-sigkey-mariana-001',
       signatureHash: 'seed-sighash-sha256-mariana-001-valid',
     },
   });
 
-  // 13 Arquivos Obrigatórios em status UPLOADED para o Caso 1
   for (const fileData of generate13SlotFiles(case1.id, doctor.id)) {
     await prisma.caseFile.create({ data: fileData });
   }
 
-  // Atribuição formal do Caso ao Planner via CaseAssignment
   await prisma.caseAssignment.create({
     data: {
       caseId: case1.id,
@@ -556,7 +1058,6 @@ async function main() {
     },
   });
 
-  // Setup Virtual 3D Publicado (14 sup, 12 inf)
   await prisma.setup.create({
     data: {
       caseId: case1.id,
@@ -581,7 +1082,51 @@ async function main() {
     },
   });
 
-  // Mensagem no Prontuário
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: case1.id,
+      orderNumber: 'FY-2026-001-OS-01',
+      sequenceNumber: 1,
+      type: 'INITIAL',
+      status: 'AWAITING_APPROVAL',
+      title: 'Pedido Inicial — Planejamento e 1ª Leva de Alinhadores',
+      requiresNewBudget: false,
+      nemoStatus: 'INSERTED',
+      nemoCaseId: 'NEMO-2026-001',
+      nemoInsertedAt: daysAgo(2),
+      nemoInsertedById: felipeUser.id,
+      docsVerifiedAt: daysAgo(2.5),
+      docsVerifiedById: felipeUser.id,
+      receivedAt: daysAgo(3),
+      setupDueAt: addBusinessDays(daysAgo(3), 3),
+      setupSentAt: daysAgo(1),
+      requestedById: doctor.id,
+    },
+  });
+
+  // Proposta Contratual em DRAFT (emitida por Laís, pronta para Dr. Paulo confirmar)
+  await prisma.caseCommercialContract.create({
+    data: {
+      caseId: case1.id,
+      contractCode: 'CTR-2026-1002',
+      versionNumber: 1,
+      status: 'DRAFT',
+      packageName: 'FyAlign Estético 14 Pares',
+      contractedAligners: 14,
+      totalPriceCents: 350000,
+      currency: 'BRL',
+      productionModel: 'ALL_AT_ONCE',
+      deliveryModel: 'SINGLE_SHIPMENT',
+      includedRefinements: 1,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 17000,
+      setupSlaBusinessDays: 3,
+      productionSlaDays: 10,
+      productionSlaDayType: 'BUSINESS_DAYS',
+      commercialNotes: 'Proposta enviada por Laís; aguardando aceite formal da clínica.',
+    },
+  });
+
   await prisma.caseMessage.create({
     data: {
       caseId: case1.id,
@@ -592,7 +1137,6 @@ async function main() {
     },
   });
 
-  // Pedido Comercial Vinculado
   await prisma.order.create({
     data: {
       caseId: case1.id,
@@ -603,13 +1147,11 @@ async function main() {
     },
   });
 
-  console.log('  ✓ Caso 001 (Completo / SETUP_AVAILABLE): FY-2026-001 criado com sucesso.');
+  console.log('  ✓ Casos Mariana Costa (FY-2026-006 Ciclo Completo + FY-2026-001 SETUP_AVAILABLE) criados.');
 
   // --------------------------------------------------------------------------
   // CENÁRIO 2: Caso 002 — RASCUNHO / WIZARD INCOMPLETO (FY-2026-002)
-  // Serve para testar: Wizard Etapa 2 (Paciente Gabriel Ramos Santos),
-  // Etapa 3 (Condição Clínica) e Etapa 4 (Plano de Tratamento).
-  // Propositalmente SEM ClinicalCondition, SEM TreatmentPlan, SEM Consent.
+  // Mantido estritamente como DRAFT com 2 arquivos para suítes Fase 2 e Fase 3!
   // --------------------------------------------------------------------------
   const case2 = await prisma.case.create({
     data: {
@@ -627,7 +1169,6 @@ async function main() {
     },
   });
 
-  // Apenas 2 fotos iniciais de rascunho (incompleto propositalmente para o Wizard)
   await prisma.caseFile.create({
     data: {
       caseId: case2.id,
@@ -635,7 +1176,7 @@ async function main() {
       category: 'EXTRAORAL',
       type: 'PHOTO_FRONTAL_REST',
       originalFileName: 'rascunho_frontal.jpg',
-      storageKey: `cases/${case2.id}/slots/slot_1_rascunho_frontal.jpg`,
+      storageKey: `clinics/seed/cases/${case2.id}/slot_1_rascunho_frontal.jpg`,
       mimeType: 'image/jpeg',
       fileSizeBytes: 1800000,
       status: 'UPLOADED',
@@ -650,7 +1191,7 @@ async function main() {
       category: 'EXTRAORAL',
       type: 'PHOTO_FRONTAL_SMILE',
       originalFileName: 'rascunho_sorriso.jpg',
-      storageKey: `cases/${case2.id}/slots/slot_2_rascunho_sorriso.jpg`,
+      storageKey: `clinics/seed/cases/${case2.id}/slot_2_rascunho_sorriso.jpg`,
       mimeType: 'image/jpeg',
       fileSizeBytes: 1950000,
       status: 'UPLOADED',
@@ -658,13 +1199,11 @@ async function main() {
     },
   });
 
-  console.log('  ✓ Caso 002 (Rascunho / DRAFT Wizard): FY-2026-002 criado com sucesso.');
+  console.log('  ✓ Caso 002 (Rascunho / DRAFT Wizard): FY-2026-002 criado.');
 
   // --------------------------------------------------------------------------
-  // CENÁRIO 3: Caso 003 — SUBMITTED (FY-2026-003)
-  // Serve para testar: Transição Dentista -> Triagem do Laboratório,
-  // Atribuição de Planner e criação do primeiro Setup Virtual.
-  // Possui Condition ✓, TreatmentPlan ✓, Consent ✓, 13 Arquivos ✓.
+  // CENÁRIO 3: Caso 003 — SUBMITTED / SLA OVERDUE & SEM CONTRATO (FY-2026-003)
+  // Pronto para triagem de Felipe, inserção Nemo, emissão de proposta por Laís!
   // --------------------------------------------------------------------------
   const case3 = await prisma.case.create({
     data: {
@@ -679,7 +1218,7 @@ async function main() {
       angleClass: 'Classe I',
       restrictedTeethFdi: JSON.stringify([]),
       doctorNotes: 'Alinhamento com fechamento de diastemas. Respeitar contatos proximais.',
-      submittedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      submittedAt: daysAgo(6),
     },
   });
 
@@ -721,9 +1260,9 @@ async function main() {
       caseId: case3.id,
       policyVersion: 'v1.0',
       policyHash: 'seed-policy-hash-v1-lucas-2026',
-      acceptedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      acceptedAt: daysAgo(6),
       ipAddress: '127.0.0.1',
-      userAgent: 'FyAlign Seed/2.0 (Mozilla/5.0 Chrome/120.0)',
+      userAgent: 'FyAlign Seed/3.0',
       scrollCompleted: true,
       signatureKey: 'seed-sigkey-lucas-003',
       signatureHash: 'seed-sighash-sha256-lucas-003-valid',
@@ -734,13 +1273,26 @@ async function main() {
     await prisma.caseFile.create({ data: fileData });
   }
 
-  console.log('  ✓ Caso 003 (SUBMITTED / Triagem Lab): FY-2026-003 criado com sucesso.');
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: case3.id,
+      orderNumber: 'FY-2026-003-OS-01',
+      sequenceNumber: 1,
+      type: 'INITIAL',
+      status: 'RECEIVED',
+      title: 'Pedido Inicial — Planejamento e 1ª Leva de Alinhadores',
+      requiresNewBudget: false,
+      nemoStatus: 'PENDING',
+      receivedAt: daysAgo(6),
+      setupDueAt: daysAgo(1), // SLA de Setup estourado -> OVERDUE!
+      requestedById: doctor.id,
+    },
+  });
+
+  console.log('  ✓ Caso 003 (SUBMITTED / SLA OVERDUE / Sem Contrato): FY-2026-003 criado.');
 
   // --------------------------------------------------------------------------
   // CENÁRIO 4: Caso 004 — CRO PENDENTE (FY-2026-004)
-  // Serve para testar: Regra RN-02 de Habilitação do CRO.
-  // Dr. Rafael possui croStatus = 'PENDING'. Pode criar rascunho e preencher tudo,
-  // mas o botão de Submeter é bloqueado pelo guard com 403 CRO_NOT_VERIFIED.
   // --------------------------------------------------------------------------
   const case4 = await prisma.case.create({
     data: {
@@ -793,13 +1345,10 @@ async function main() {
     await prisma.caseFile.create({ data: fileData });
   }
 
-  console.log('  ✓ Caso 004 (CRO PENDENTE / Bloqueio RN-02): FY-2026-004 criado com sucesso.');
+  console.log('  ✓ Caso 004 (CRO PENDENTE / Bloqueio RN-02): FY-2026-004 criado.');
 
   // --------------------------------------------------------------------------
-  // CENÁRIO 5: Caso 005 — SEGUNDA CLÍNICA (FY-2026-B01)
-  // Serve para testar: Isolamento Multi-Tenant e Neutralização Anti-IDOR.
-  // Pertence à Clínica Sorriso Dental Sul (Clínica B) com a Dra. Camila Sul.
-  // Dentistas da Clínica A recebem 404 ao tentar acessar ou manipular este caso.
+  // CENÁRIO 5: Caso 005 — SEGUNDA CLÍNICA (FY-2026-B01 — Anti-IDOR Multi-Tenant)
   // --------------------------------------------------------------------------
   const case5 = await prisma.case.create({
     data: {
@@ -813,7 +1362,7 @@ async function main() {
       chiefComplaint: 'Mordida cruzada unilateral e apinhamento severo inferior.',
       angleClass: 'Classe III',
       doctorNotes: 'Caso pertencente exclusivamente ao tenant da Clínica B.',
-      submittedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      submittedAt: daysAgo(2),
     },
   });
 
@@ -854,9 +1403,9 @@ async function main() {
       caseId: case5.id,
       policyVersion: 'v1.0',
       policyHash: 'seed-policy-hash-v1-roberto-2026',
-      acceptedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      acceptedAt: daysAgo(2),
       ipAddress: '127.0.0.1',
-      userAgent: 'FyAlign Seed/2.0 (Mozilla/5.0 Chrome/120.0)',
+      userAgent: 'FyAlign Seed/3.0',
       scrollCompleted: true,
       signatureKey: 'seed-sigkey-roberto-005',
       signatureHash: 'seed-sighash-sha256-roberto-005-valid',
@@ -867,12 +1416,212 @@ async function main() {
     await prisma.caseFile.create({ data: fileData });
   }
 
-  console.log('  ✓ Caso 005 (SEGUNDA CLÍNICA / Anti-IDOR): FY-2026-B01 criado com sucesso.');
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: case5.id,
+      orderNumber: 'FY-2026-B01-OS-01',
+      sequenceNumber: 1,
+      type: 'INITIAL',
+      status: 'RECEIVED',
+      title: 'Pedido Inicial — Clínica B',
+      requiresNewBudget: false,
+      nemoStatus: 'PENDING',
+      receivedAt: daysAgo(2),
+      setupDueAt: addBusinessDays(daysAgo(2), 3),
+      requestedById: doctorCamila.id,
+    },
+  });
 
-  // ==========================================================================
-  // 6. CONVITE DE DEMONSTRAÇÃO (Demonstração da tabela Invitation)
-  // ==========================================================================
-  console.log('✉️ 7. Criando Convite de Demonstração...');
+  const contractB = await prisma.caseCommercialContract.create({
+    data: {
+      caseId: case5.id,
+      contractCode: 'CTR-2026-2001',
+      versionNumber: 1,
+      status: 'CONFIRMED',
+      packageName: 'FyAlign Clínica Sul 20 Pares',
+      contractedAligners: 20,
+      totalPriceCents: 380000,
+      currency: 'BRL',
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 1,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 15000,
+      confirmedById: pauloUser.id,
+      confirmedAt: daysAgo(1),
+    },
+  });
+
+  await prisma.contractVersion.create({
+    data: {
+      contractId: contractB.id,
+      versionNumber: 1,
+      contractedAligners: 20,
+      totalPriceCents: 380000,
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 1,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 15000,
+      snapshotJson: JSON.stringify({ contractCode: 'CTR-2026-2001' }),
+      changeReason: 'Confirmação inicial Clínica B.',
+      changedById: pauloUser.id,
+    },
+  });
+
+  console.log('  ✓ Caso 005 (SEGUNDA CLÍNICA / Anti-IDOR): FY-2026-B01 criado.');
+
+  // --------------------------------------------------------------------------
+  // CENÁRIO 6: Beatriz Cavalcanti — FY-2026-007 (Radar T-30d Elegível p/ Disparo)
+  // Setup aprovado + Contrato confirmado (24 pares) + LOTE-01 (12 pares) entregue
+  // há 142 dias -> término estimado da 1ª leva em ~26 dias -> Radar T-30d ativo!
+  // --------------------------------------------------------------------------
+  const caseBeatriz = await prisma.case.create({
+    data: {
+      caseCode: 'FY-2026-007',
+      patientId: patient6.id,
+      doctorId: doctor.id,
+      doctorMembershipId: doctorMembership.id,
+      clinicId: clinicOrg.id,
+      status: 'DELIVERED',
+      treatedArches: 'BOTH',
+      chiefComplaint: 'Sobremordida acentuada e rotação de pré-molares.',
+      angleClass: 'Classe II Div 2',
+      restrictedTeethFdi: JSON.stringify([]),
+      doctorNotes: 'Primeira leva entregue; acompanhar janela T-30d da Segunda Leva.',
+      assignedPlannerId: adrianoUser.id,
+      submittedAt: daysAgo(155),
+      approvedAt: daysAgo(150),
+    },
+  });
+
+  for (const fileData of generate13SlotFiles(caseBeatriz.id, doctor.id)) {
+    await prisma.caseFile.create({ data: fileData });
+  }
+
+  await prisma.setup.create({
+    data: {
+      caseId: caseBeatriz.id,
+      versionNumber: 1,
+      status: 'APPROVED',
+      upperAlignersCount: 24,
+      lowerAlignersCount: 24,
+      approvedAt: daysAgo(150),
+      plannerComments: 'Planejamento de 24 estágios aprovado.',
+    },
+  });
+
+  const contractBeatriz = await prisma.caseCommercialContract.create({
+    data: {
+      caseId: caseBeatriz.id,
+      contractCode: 'CTR-2026-1007',
+      versionNumber: 1,
+      status: 'CONFIRMED',
+      packageName: 'FyAlign Híbrido 24 Pares',
+      contractedAligners: 24,
+      totalPriceCents: 420000,
+      currency: 'BRL',
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 2,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 16000,
+      setupSlaBusinessDays: 3,
+      productionSlaDays: 10,
+      productionSlaDayType: 'BUSINESS_DAYS',
+      confirmedById: pauloUser.id,
+      confirmedAt: daysAgo(149),
+    },
+  });
+
+  await prisma.contractVersion.create({
+    data: {
+      contractId: contractBeatriz.id,
+      versionNumber: 1,
+      contractedAligners: 24,
+      totalPriceCents: 420000,
+      productionModel: 'HYBRID',
+      deliveryModel: 'BATCHED',
+      includedRefinements: 2,
+      refinementWindowDays: 180,
+      extraAlignerPriceCents: 16000,
+      setupSlaBusinessDays: 3,
+      productionSlaDays: 10,
+      productionSlaDayType: 'BUSINESS_DAYS',
+      snapshotJson: JSON.stringify({ contractCode: 'CTR-2026-1007' }),
+      changeReason: 'Confirmação inicial do contrato.',
+      changedById: pauloUser.id,
+    },
+  });
+
+  const unitBeatriz1 = await prisma.productionUnit.create({
+    data: {
+      caseId: caseBeatriz.id,
+      contractId: contractBeatriz.id,
+      unitCode: 'LOTE-01',
+      type: 'BATCH',
+      quantityPairs: 12,
+      shippedQuantity: 12,
+      stagesDescription: 'Alinhadores 01 a 12 (1ª Leva)',
+      status: 'SHIPPED',
+      qcApprovedById: felipeUser.id,
+      qcApprovedAt: daysAgo(143),
+    },
+  });
+
+  const shipBeatriz1 = await prisma.shipment.create({
+    data: {
+      caseId: caseBeatriz.id,
+      shipmentCode: 'REM-2026-107',
+      carrierName: 'Correios SEDEX',
+      trackingCode: 'SX887766554BR',
+      status: 'DELIVERED',
+      shippedAt: daysAgo(142),
+      deliveredAt: daysAgo(140),
+      dispatchedById: laisUser.id,
+    },
+  });
+
+  await prisma.shipmentItem.create({
+    data: {
+      shipmentId: shipBeatriz1.id,
+      productionUnitId: unitBeatriz1.id,
+      quantityShipped: 12,
+    },
+  });
+
+  await prisma.serviceOrder.create({
+    data: {
+      caseId: caseBeatriz.id,
+      orderNumber: 'FY-2026-007-OS-01',
+      sequenceNumber: 1,
+      type: 'INITIAL',
+      status: 'DELIVERED',
+      title: 'Pedido Inicial — Alinhadores 1 a 12',
+      alignerRangeStart: 1,
+      alignerRangeEnd: 12,
+      requiresNewBudget: false,
+      nemoStatus: 'INSERTED',
+      nemoCaseId: 'NEMO-2026-107',
+      nemoInsertedAt: daysAgo(153),
+      nemoInsertedById: felipeUser.id,
+      docsVerifiedAt: daysAgo(153),
+      docsVerifiedById: felipeUser.id,
+      receivedAt: daysAgo(155),
+      setupDueAt: daysAgo(151),
+      setupSentAt: daysAgo(152),
+      approvedAt: daysAgo(150),
+      productionReleasedAt: daysAgo(149),
+      productionReleasedById: felipeUser.id,
+      productionDueAt: daysAgo(139),
+      completedAt: daysAgo(142),
+      requestedById: doctor.id,
+    },
+  });
+
+  console.log('  ✓ Caso 006 (Radar T-30d Segunda Leva elegível): FY-2026-007 criado.');
+
+  // Convite de demonstração
   await prisma.invitation.create({
     data: {
       organizationId: clinicOrg.id,
@@ -882,22 +1631,24 @@ async function main() {
       croNumber: '114422',
       croUf: 'SP',
       status: 'PENDING',
-      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), // 48 horas
+      expiresAt: daysAhead(2),
       invitedById: doctor.id,
     },
   });
 
   console.log('\n========================================================================');
-  console.log('🎉 BANCO DE DADOS POVOADO COM SUCESSO (SEED V2)!');
+  console.log('🎉 BANCO DE DADOS POVOADO COM SUCESSO (SEED V3 — FASE B)!');
   console.log('========================================================================');
-  console.log('Cenários disponíveis para desenvolvimento e testes:');
-  console.log('  1. Caso FY-2026-001: SETUP_AVAILABLE (Completo: Condição + Plano + Consentimento + 13 slots + Setup)');
-  console.log('  2. Caso FY-2026-002: DRAFT (Rascunho: Paciente Gabriel Ramos Santos, pronto para testar o Wizard)');
-  console.log('  3. Caso FY-2026-003: SUBMITTED (Pronto para Triagem do Laboratório)');
-  console.log('  4. Caso FY-2026-004: CRO PENDENTE (Dr. Rafael: pode preencher Wizard, bloqueado na submissão)');
-  console.log('  5. Caso FY-2026-B01: SEGUNDA CLÍNICA (Dra. Camila: isolamento multi-tenant / anti-IDOR)');
-  console.log('  - Multi-Membership: Dr. Roberto Silva possui papéis DOCTOR e CLINIC_ADMIN');
-  console.log('  - Financeiro: Beatriz Lima (FINANCE) mantida para validação futura de RBAC');
+  console.log('Personas prontas para homologação (Senha padrão: Password@123):');
+  console.log('  - Felipe (Conferência, Nemo & Produção): felipe@fyalign.com');
+  console.log('  - Dr. Adriano (Planejador 3D):           adriano@fyalign.com');
+  console.log('  - Laís (Comercial & Relacionamento):     lais@fyalign.com');
+  console.log('  - Dr. Paulo (Financeiro & Contratos):    paulo@fyalign.com');
+  console.log('  - Super Admin:                           admin@fyalign.com');
+  console.log('  - Dr. Roberto (Ortodontista CRO OK):     roberto@odontoprime.com.br');
+  console.log('  - Larissa (Assistente Clínica):          larissa@odontoprime.com.br');
+  console.log('  - Dr. Rafael (CRO Pendente):             rafael.pendente@odontoprime.com.br');
+  console.log('  - Dra. Camila (Clínica B):               camila@sorrisosul.com.br');
   console.log('========================================================================\n');
 }
 

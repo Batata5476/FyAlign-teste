@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
         name: user.fullName,
         fullName: user.fullName,
         email: user.email,
+        phone: user.phone || null,
+        mustChangePassword: Boolean((user as any).mustChangePassword),
         role: activeMembership.role,
         permissions: getEffectivePermissions(activeMembership as any),
         croStatus: activeMembership.croStatus,

@@ -71,7 +71,10 @@ export async function GET(req: NextRequest) {
       where: { patientId },
       orderBy: { updatedAt: 'desc' },
     });
-    return NextResponse.json({ externalLinks: links });
+    const isClinicViewer = sessionUser.organizationType === 'CLINIC';
+    return NextResponse.json({
+      externalLinks: links.filter((l) => !(isClinicViewer && l.provider === 'NEMO')),
+    });
   }
 
   if (!hasPermission(userCtx, 'CASE_READ')) {
@@ -85,11 +88,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Tratamento não encontrado.' }, { status: 404 });
   }
 
+  const canSeeNemo =
+    sessionUser.organizationType === 'FYALIGN' &&
+    (hasPermission(userCtx, 'NEMO_MANAGE') ||
+      hasPermission(userCtx, 'SETUP_CREATE') ||
+      hasPermission(userCtx, 'PRODUCTION_READ'));
+  const canReadContract = hasPermission(userCtx, 'CONTRACT_READ');
+
   const links = await prisma.externalSystemLink.findMany({
     where: { caseId: caseId! },
     orderBy: { updatedAt: 'desc' },
   });
-  return NextResponse.json({ externalLinks: links });
+  return NextResponse.json({
+    externalLinks: links.filter((l) => {
+      if (l.provider === 'NEMO' && !canSeeNemo) return false;
+      if (l.provider === 'ERP_FINANCIAL' && !canReadContract) return false;
+      return true;
+    }),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -220,3 +236,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

@@ -87,12 +87,20 @@ export async function POST(
         type: { in: ['INITIAL', 'REFINEMENT'] },
         status: { notIn: ['DELIVERED', 'CANCELLED'] },
       },
+      include: {
+        refinementRequest: true,
+      },
       orderBy: { sequenceNumber: 'desc' },
     });
 
     if (activeServiceOrder) {
-      const canReleaseImmediately =
-        !activeServiceOrder.requiresNewBudget || Boolean(isContractConfirmed);
+      const isRefinementCommercialOk =
+        activeServiceOrder.type !== 'REFINEMENT' ||
+        !activeServiceOrder.requiresNewBudget ||
+        activeServiceOrder.refinementRequest?.commercialStatus === 'APPROVED' ||
+        activeServiceOrder.refinementRequest?.commercialStatus === 'COMMERCIALLY_APPROVED';
+
+      const canReleaseImmediately = Boolean(isContractConfirmed) && isRefinementCommercialOk;
 
       const productionDueAt = canReleaseImmediately
         ? calculateProductionDueAt(now, {
@@ -110,6 +118,20 @@ export async function POST(
         },
       });
     }
+
+    await prisma.operationalEvent.create({
+      data: {
+        caseId,
+        serviceOrderId: activeServiceOrder?.id || null,
+        eventType: 'SETUP_APPROVED',
+        channel: 'PORTAL',
+        summary: `Setup virtual v${targetSetup.versionNumber} aprovado clinicamente por ${sessionUser.fullName}`,
+        details: clinicalNotes || null,
+        isInternalOnly: false,
+        recordedById: sessionUser.userId,
+        occurredAt: now,
+      },
+    });
 
     // 3. F5.03: Geração automática de Ordem de Produção (OP) imutável (Legado Preservado)
     const maxAligners = Math.max(
