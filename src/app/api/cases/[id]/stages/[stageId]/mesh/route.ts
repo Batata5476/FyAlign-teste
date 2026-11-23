@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
 import fs from 'fs';
-import path from 'path';
-import { s3Client } from '@/lib/storage/s3';
+import { s3Client, resolveLocalStorageFilePath } from '@/lib/storage/s3';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@/lib/env';
@@ -64,8 +63,8 @@ export async function GET(
     }
   }
 
-  // 2. Ambiente Local / Dev Mode: busca em storage-vault
-  const localFilePath = path.join(process.cwd(), 'storage-vault', storageKey);
+  // 2. Ambiente Local / Dev Mode / Serverless /tmp: busca em storage-vault
+  const localFilePath = resolveLocalStorageFilePath(storageKey);
   if (!fs.existsSync(localFilePath)) {
     return NextResponse.json(
       { error: `Arquivo físico do estágio não encontrado no storage (${storageKey})` },

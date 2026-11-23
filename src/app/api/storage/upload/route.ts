@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyLocalUploadSignature } from '@/lib/storage/s3';
+import { verifyLocalUploadSignature, getLocalStorageVaultRoot } from '@/lib/storage/s3';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -23,8 +23,8 @@ export async function PUT(req: NextRequest) {
     // Lê os bytes recebidos do stream do navegador
     const buffer = Buffer.from(await req.arrayBuffer());
 
-    // Define diretório de armazenamento seguro em disco
-    const targetPath = path.join(process.cwd(), 'storage-vault', key);
+    // Define diretório de armazenamento seguro em disco (usa /tmp/storage-vault em serverless Vercel)
+    const targetPath = path.join(getLocalStorageVaultRoot(), key);
     const targetDir = path.dirname(targetPath);
 
     if (!fs.existsSync(targetDir)) {

@@ -2,6 +2,25 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@/lib/env';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+
+export function getLocalStorageVaultRoot(): string {
+  if (process.env.VERCEL) {
+    return '/tmp/storage-vault';
+  }
+  return path.join(process.cwd(), 'storage-vault');
+}
+
+export function resolveLocalStorageFilePath(storageKey: string): string {
+  if (process.env.VERCEL) {
+    const tmpCandidate = path.join('/tmp/storage-vault', storageKey);
+    if (fs.existsSync(tmpCandidate)) {
+      return tmpCandidate;
+    }
+  }
+  return path.join(process.cwd(), 'storage-vault', storageKey);
+}
 
 const isRealAwsConfigured =
   env.AWS_ACCESS_KEY_ID &&

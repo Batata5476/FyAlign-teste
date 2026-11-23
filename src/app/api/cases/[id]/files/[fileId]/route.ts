@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth/guard';
 import fs from 'fs';
-import path from 'path';
-import { s3Client } from '@/lib/storage/s3';
+import { s3Client, resolveLocalStorageFilePath } from '@/lib/storage/s3';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@/lib/env';
@@ -51,8 +50,8 @@ export async function GET(
     }
   }
 
-  // Fallback para storage-vault local (Dev Mode)
-  const localFilePath = path.join(process.cwd(), 'storage-vault', file.storageKey);
+  // Fallback para storage-vault local (Dev Mode / Serverless /tmp)
+  const localFilePath = resolveLocalStorageFilePath(file.storageKey);
   if (!fs.existsSync(localFilePath)) {
     return NextResponse.json(
       { error: 'Arquivo não encontrado no storage local', code: 'NOT_FOUND' },
