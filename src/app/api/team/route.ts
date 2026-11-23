@@ -15,6 +15,8 @@ import {
   ROLE_CEILINGS,
   ROLE_DEFAULT_PERMISSIONS,
   PERMISSION_MODULES,
+  PERMISSIONS,
+  FREE_PERMISSION_OVERRIDE_MARKER,
   UserRole,
 } from '@/lib/auth/rbac';
 
@@ -27,6 +29,7 @@ const inviteSchema = z.object({
   croNumber: z.string().optional(),
   croUf: z.string().optional(),
   permissions: z.array(z.string()).optional(),
+  allowFreeOverride: z.boolean().optional(),
 });
 
 /**
@@ -194,24 +197,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Validação das Permissões Granulares contra o Teto do Cargo (ROLE_CEILINGS)
+    // 3. Validação das Permissões Granulares (Padrão por Teto ou Edição Livre Confirmada)
+    const allValidKeys = new Set<string>(Object.keys(PERMISSIONS));
     const permissionsToGrant: string[] =
       parsed.permissions && parsed.permissions.length > 0
-        ? parsed.permissions
+        ? Array.from(new Set(parsed.permissions.filter((p) => allValidKeys.has(p))))
         : ROLE_DEFAULT_PERMISSIONS[parsed.role as UserRole] || [];
 
     const validation = validatePermissionsAgainstCeiling(parsed.role, permissionsToGrant);
-    if (!validation.valid) {
+    if (!validation.valid && !parsed.allowFreeOverride) {
       return NextResponse.json(
         {
           error: `As seguintes permissões excedem o teto permitido para o cargo "${parsed.role}": ${validation.invalidPermissions.join(
             ', '
-          )}. O administrador não pode conceder permissões fora do escopo da função.`,
+          )}. Ative e confirme o modo "Editar Permissões" para conceder permissões livres.`,
           code: 'FORBIDDEN_PERMISSION_CEILING',
         },
         { status: 400 }
       );
     }
+
+    const persistedPermissions =
+      !validation.valid && parsed.allowFreeOverride
+        ? [...permissionsToGrant, FREE_PERMISSION_OVERRIDE_MARKER]
+        : permissionsToGrant;
 
     // 4. Define se gera senha temporária (novo usuário ou conta ainda não ativada)
     const isAlreadyActivatedAccount = Boolean(
@@ -283,9 +292,9 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      if (permissionsToGrant.length > 0) {
+      if (persistedPermissions.length > 0) {
         await tx.membershipPermission.createMany({
-          data: permissionsToGrant.map((perm) => ({
+          data: persistedPermissions.map((perm) => ({
             membershipId: createdMembership.id,
             permission: perm,
           })),
@@ -309,9 +318,9 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      if (permissionsToGrant.length > 0) {
+      if (persistedPermissions.length > 0) {
         await tx.invitationPermission.createMany({
-          data: permissionsToGrant.map((p) => ({
+          data: persistedPermissions.map((p) => ({
             invitationId: inv.id,
             permission: p,
           })),

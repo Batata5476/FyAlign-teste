@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, AuthUserContext } from '@/lib/auth/session';
-import { hasPermission, Permission, ROLES } from '@/lib/auth/rbac';
+import { hasPermission, userHasPermission, Permission, ROLES } from '@/lib/auth/rbac';
 import { prisma } from '@/lib/prisma';
 
 export type ResourceType =
@@ -66,8 +66,11 @@ export async function authorize(
     };
   }
 
-  // 3. Validação de Permissão Granular (Role Ceiling + Membership Permissions)
-  if (!hasPermission({ role: user.role, permissions: user.permissions }, options.permission)) {
+  // 3. Validação de Permissão Granular (user.permissions já calculado por getEffectivePermissions no banco)
+  if (
+    !hasPermission({ role: user.role, permissions: user.permissions }, options.permission) &&
+    !userHasPermission(user, options.permission)
+  ) {
     return {
       authorized: false,
       response: NextResponse.json(

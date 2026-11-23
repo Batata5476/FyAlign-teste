@@ -6,6 +6,8 @@ import {
   validatePermissionsAgainstCeiling,
   getEffectivePermissions,
   ROLE_CEILINGS,
+  PERMISSIONS,
+  FREE_PERMISSION_OVERRIDE_MARKER,
   Permission,
 } from '@/lib/auth/rbac';
 
@@ -15,6 +17,7 @@ const updatePermissionsSchema = z.object({
   permissions: z
     .array(z.string())
     .min(1, 'Selecione pelo menos uma permissão de acesso (para bloquear tudo, suspenda o vínculo).'),
+  allowFreeOverride: z.boolean().optional(),
 });
 
 /**
@@ -41,7 +44,11 @@ export async function PUT(
 
   try {
     const body = await req.json();
-    const { permissions: requestedPermissions } = updatePermissionsSchema.parse(body);
+    const { permissions: rawRequestedPermissions, allowFreeOverride } = updatePermissionsSchema.parse(body);
+    const allValidKeys = new Set<string>(Object.keys(PERMISSIONS));
+    const requestedPermissions = Array.from(
+      new Set(rawRequestedPermissions.filter((p) => allValidKeys.has(p)))
+    );
 
     // 1. Busca o vínculo alvo
     const targetMembership = await db.membership.findUnique({
@@ -70,16 +77,16 @@ export async function PUT(
       );
     }
 
-    // 3. Validação estrita contra o Teto do Cargo (ROLE_CEILINGS)
+    // 3. Validação contra o Teto do Cargo (ou liberação via Edição Livre confirmada)
     const validation = validatePermissionsAgainstCeiling(
       targetMembership.role,
       requestedPermissions
     );
 
-    if (!validation.valid) {
+    if (!validation.valid && !allowFreeOverride) {
       return NextResponse.json(
         {
-          error: `Não é permitido conceder permissões fora do teto da função "${targetMembership.role}". Permissões não autorizadas: ${validation.invalidPermissions.join(
+          error: `Não é permitido conceder permissões fora do teto da função "${targetMembership.role}" sem ativar a Edição Livre. Permissões fora do teto: ${validation.invalidPermissions.join(
             ', '
           )}.`,
           code: 'FORBIDDEN_PERMISSION_CEILING',
@@ -87,6 +94,11 @@ export async function PUT(
         { status: 400 }
       );
     }
+
+    const persistedPermissions =
+      !validation.valid && allowFreeOverride
+        ? [...requestedPermissions, FREE_PERMISSION_OVERRIDE_MARKER]
+        : requestedPermissions;
 
     // 4. Prevenção de Auto-Lockout: se for o próprio usuário ativo, não pode remover TEAM_MANAGE
     if (
@@ -110,9 +122,9 @@ export async function PUT(
       });
 
       // Insere as novas permissões concedidas
-      if (requestedPermissions.length > 0) {
+      if (persistedPermissions.length > 0) {
         await tx.membershipPermission.createMany({
-          data: requestedPermissions.map((perm) => ({
+          data: persistedPermissions.map((perm) => ({
             membershipId: targetMembership.id,
             permission: perm,
           })),

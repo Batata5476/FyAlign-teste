@@ -110,6 +110,7 @@ export default function TeamManagementPage() {
   const [inviteCroNumber, setInviteCroNumber] = useState('');
   const [inviteCroUf, setInviteCroUf] = useState('SP');
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
+  const [inviteFreeEditMode, setInviteFreeEditMode] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
@@ -118,6 +119,7 @@ export default function TeamManagementPage() {
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [selectedMemberForPermissions, setSelectedMemberForPermissions] = useState<Member | null>(null);
   const [memberEditingPermissions, setMemberEditingPermissions] = useState<string[]>([]);
+  const [memberFreeEditMode, setMemberFreeEditMode] = useState(false);
   const [savingPermissionsLoading, setSavingPermissionsLoading] = useState(false);
   const [permissionsModalError, setPermissionsModalError] = useState<string | null>(null);
   const [permissionsModalSuccess, setPermissionsModalSuccess] = useState<string | null>(null);
@@ -216,6 +218,7 @@ export default function TeamManagementPage() {
   const handleOpenPermissionsModal = (member: Member) => {
     setSelectedMemberForPermissions(member);
     setMemberEditingPermissions([...(member.permissions || [])]);
+    setMemberFreeEditMode(false);
     setPermissionsModalError(null);
     setPermissionsModalSuccess(null);
     setIsPermissionsModalOpen(true);
@@ -231,7 +234,10 @@ export default function TeamManagementPage() {
       const res = await fetch(`/api/team/members/${selectedMemberForPermissions.id}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permissions: memberEditingPermissions }),
+        body: JSON.stringify({
+          permissions: memberEditingPermissions,
+          allowFreeOverride: memberFreeEditMode,
+        }),
       });
 
       const data = await res.json();
@@ -311,6 +317,7 @@ export default function TeamManagementPage() {
           croNumber: inviteRole === 'DOCTOR' ? inviteCroNumber : undefined,
           croUf: inviteRole === 'DOCTOR' ? inviteCroUf : undefined,
           permissions: invitePermissions,
+          allowFreeOverride: inviteFreeEditMode,
         }),
       });
 
@@ -1211,6 +1218,8 @@ export default function TeamManagementPage() {
                   permissionModules={permissionModules}
                   selectedPermissions={invitePermissions}
                   onChange={setInvitePermissions}
+                  freeEditMode={inviteFreeEditMode}
+                  onFreeEditModeChange={setInviteFreeEditMode}
                 />
               </div>
 
@@ -1398,6 +1407,8 @@ export default function TeamManagementPage() {
                   permissionModules={permissionModules}
                   selectedPermissions={memberEditingPermissions}
                   onChange={setMemberEditingPermissions}
+                  freeEditMode={memberFreeEditMode}
+                  onFreeEditModeChange={setMemberFreeEditMode}
                 />
               </div>
 

@@ -553,9 +553,13 @@ export function validatePermissionsAgainstCeiling(
   };
 }
 
+export const FREE_PERMISSION_OVERRIDE_MARKER = '__FREE_OVERRIDE__';
+
 /**
  * Calcula as permissões efetivas de um vínculo (Membership):
- *   effectivePermissions = ROLE_CEILINGS[role] ∩ MembershipPermission
+ * - Padrão: effectivePermissions = ROLE_CEILINGS[role] ∩ MembershipPermission
+ * - Com Edição Livre Confirmada (__FREE_OVERRIDE__): permite todas as permissões canônicas
+ *   explicitamente concedidas pelo administrador.
  *
  * Para registros legados sem linhas em MembershipPermission, aplica:
  *   ROLE_CEILINGS[role] ∩ ROLE_DEFAULT_PERMISSIONS[role]
@@ -569,6 +573,7 @@ export function getEffectivePermissions(membership: {
   if (ceiling.length === 0) return [];
 
   const ceilingSet = new Set<string>(ceiling);
+  const allValidSet = new Set<string>(Object.keys(PERMISSIONS));
 
   if (Array.isArray(membership.permissions) && membership.permissions.length > 0) {
     const rawList =
@@ -576,8 +581,16 @@ export function getEffectivePermissions(membership: {
         ? (membership.permissions as string[])
         : (membership.permissions as { permission: string }[]).map((p) => p.permission);
 
+    const hasFreeOverride = rawList.includes(FREE_PERMISSION_OVERRIDE_MARKER);
+    const uniqueGranted = Array.from(new Set(rawList)).filter(
+      (p) => p !== FREE_PERMISSION_OVERRIDE_MARKER
+    );
+
+    if (hasFreeOverride) {
+      return uniqueGranted.filter((p) => allValidSet.has(p)) as Permission[];
+    }
+
     // Interseção estrita: ROLE_CEILINGS[role] ∩ MembershipPermission (sem duplicatas)
-    const uniqueGranted = Array.from(new Set(rawList));
     return uniqueGranted.filter((p) => ceilingSet.has(p)) as Permission[];
   }
 
