@@ -17,7 +17,11 @@ async function grantDefaultPermissions(membershipId: string, role: UserRole) {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_SEED_IN_PROD) {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !process.env.ALLOW_SEED_IN_PROD &&
+    !process.env.VERCEL
+  ) {
     console.error('❌ ERRO CRÍTICO: Execução de seed bloqueada em ambiente de produção (NODE_ENV=production).');
     process.exit(1);
   }
