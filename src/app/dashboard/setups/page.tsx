@@ -52,7 +52,7 @@ export default function SetupsListPage() {
             <p style={{ color: 'var(--text-muted)' }}>Nenhum setup virtual publicado no momento.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+          <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
             {cases.map((c) => {
               const setup = c.setups[0];
               return (

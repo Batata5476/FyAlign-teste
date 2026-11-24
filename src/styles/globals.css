@@ -992,4 +992,289 @@ select.form-input option {
   color: var(--text-muted);
 }
 
+/* ==========================================================================
+   8. RESPONSIVIDADE MOBILE & TABLET (SISTEMA COMPLETO FYALIGN)
+   ========================================================================== */
+
+.mobile-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--btn-ghost-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.mobile-menu-toggle:hover {
+  border-color: var(--cyan-primary);
+  color: var(--cyan-primary);
+}
+
+.mobile-sidebar-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--btn-ghost-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Utilitários Responsivos Reutilizáveis */
+.responsive-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.login-split-grid {
+  width: 100%;
+  max-width: 1060px;
+  display: grid;
+  grid-template-Columns: 1.1fr 0.9fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.wizard-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+/* Tablet & Mobile Navigation Drawer (<= 960px) */
+@media (max-width: 960px) {
+  .mobile-menu-toggle {
+    display: inline-flex;
+  }
+
+  .mobile-sidebar-close {
+    display: inline-flex;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 84vw;
+    height: 100dvh;
+    z-index: 1200;
+    transform: translateX(-105%);
+    transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .app-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 9, 18, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1150;
+  }
+
+  .app-header {
+    height: auto;
+    min-height: 62px;
+    padding: 10px 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .app-content {
+    padding: 18px 16px;
+  }
+
+  .responsive-grid-4,
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns:repeat(4,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .login-split-grid,
+  [style*="grid-template-columns: 1.1fr 0.9fr"] {
+    grid-template-columns: 1fr !important;
+    gap: 28px !important;
+  }
+
+  .wizard-steps-grid,
+  [style*="grid-template-columns: repeat(7, 1fr)"] {
+    display: flex !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    gap: 8px !important;
+  }
+
+  .wizard-steps-grid > button,
+  [style*="grid-template-columns: repeat(7, 1fr)"] > button {
+    min-width: 108px;
+    flex-shrink: 0;
+  }
+}
+
+/* Smartphones (<= 680px) */
+@media (max-width: 680px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .app-content {
+    padding: 14px 12px;
+  }
+
+  .header-audit-badge {
+    display: none !important;
+  }
+
+  .org-switcher-trigger {
+    padding: 6px 10px !important;
+    max-width: 210px;
+  }
+
+  /* Tipografia fluida em telas pequenas */
+  h1 {
+    font-size: clamp(1.25rem, 5vw, 1.55rem) !important;
+    line-height: 1.25 !important;
+  }
+
+  h2 {
+    font-size: clamp(1.1rem, 4.5vw, 1.3rem) !important;
+  }
+
+  h3 {
+    font-size: clamp(1rem, 4vw, 1.15rem) !important;
+  }
+
+  /* Colapso automático de grades multi-colunas para 1 coluna no celular */
+  .responsive-grid-4,
+  .responsive-grid-2,
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns: repeat(3, 1fr)"],
+  [style*="grid-template-columns: repeat(2, 1fr)"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: 2fr 1fr"],
+  [style*="grid-template-columns: 1fr 2fr"],
+  [style*="grid-template-columns: 1.2fr"],
+  [style*="grid-template-columns: 1fr 340px"],
+  [style*="grid-template-columns: 1fr 360px"],
+  [style*="grid-template-columns: 320px 1fr"],
+  [style*="grid-template-columns: repeat(auto-fit, minmax(360px"],
+  [style*="grid-template-columns: repeat(auto-fit, minmax(280px"] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Barras de busca e inputs com largura fixa passam a ocupar 100% no celular */
+  [style*="width: 280px"],
+  [style*="width: 320px"],
+  [style*="min-width: 280px"],
+  [style*="min-width: 240px"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* Cabeçalhos de página e barras de ferramentas empilham de forma limpa */
+  [style*="justify-content: space-between"] {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Tabelas com rolagem horizontal suave por toque */
+  [style*="overflow-x: auto"],
+  [style*="overflowX: auto"] {
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .custom-table th,
+  .custom-table td {
+    padding: 11px 12px;
+    font-size: 0.82rem;
+  }
+
+  /* Modais adaptados para tela de celular */
+  [style*="position: fixed"][style*="inset: 0"] {
+    padding: 10px !important;
+  }
+
+  [style*="position: fixed"][style*="inset: 0"] > div {
+    padding: 18px !important;
+    max-height: 92dvh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Ajustes de painéis glass e formulários no mobile */
+  .glass-panel,
+  .card-glass {
+    padding: 16px !important;
+  }
+
+  /* Visualizador 3D e Kanban no celular */
+  [style*="height: 520px"] {
+    height: 340px !important;
+  }
+
+  .kanban-column {
+    width: 84vw;
+    min-width: 265px;
+    max-width: 310px;
+  }
+
+  .kanban-carousel-btn {
+    display: none;
+  }
+}
+
+/* Telas compactas (<= 420px) */
+@media (max-width: 420px) {
+  .btn-primary,
+  .btn-secondary {
+    padding: 9px 14px;
+    font-size: 0.84rem;
+  }
+
+  .org-switcher-trigger {
+    max-width: 175px;
+  }
+}
+
+
 

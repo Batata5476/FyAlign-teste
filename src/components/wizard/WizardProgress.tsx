@@ -91,6 +91,7 @@ export function WizardProgress({
       }}
     >
       <div
+        className="wizard-steps-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(7, 1fr)',

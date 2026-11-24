@@ -49,14 +49,16 @@ export default function LoginPage() {
       <div style={{
         background: 'rgba(0, 210, 211, 0.08)',
         borderBottom: '1px solid rgba(0, 210, 211, 0.2)',
-        padding: '8px 24px',
+        padding: '8px 16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '8px',
         fontSize: '0.82rem',
         color: '#94a3b8'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{
             display: 'inline-block',
             width: '8px',
@@ -68,7 +70,7 @@ export default function LoginPage() {
           <strong style={{ color: 'var(--text-main)' }}>FyAlign B2B Platform</strong>
           <span>• Fase 1: Arquitetura & Multi-Tenancy Ativa</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span>PostgreSQL/SQLite Ready</span>
           <span>JWT + RBAC</span>
           <span>LGPD Compliant</span>
@@ -82,9 +84,9 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '32px 16px'
+        padding: '24px 14px'
       }}>
-        <div style={{ width: '100%', maxWidth: '1060px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '48px', alignItems: 'center' }}>
+        <div className="login-split-grid" style={{ width: '100%', maxWidth: '1060px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '48px', alignItems: 'center' }}>
           
           {/* Lado Esquerdo: Apresentação da Marca */}
           <div>
@@ -253,15 +255,17 @@ export default function LoginPage() {
 
       {/* Footer */}
       <footer style={{
-        padding: '20px 32px',
+        padding: '18px 20px',
         borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '12px',
         fontSize: '0.82rem',
         color: 'var(--text-dim)'
       }}>
         <div>© 2026 FyAlign Clear Aligners. Todos os direitos reservados. Portal Odontológico B2B.</div>
-        <div style={{ display: 'flex', gap: '20px' }}>
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
           <span>Termo de Consentimento TCLE</span>
           <span>Privacidade & LGPD</span>
           <span>Suporte Técnico: 0800 900 FYALIGN</span>

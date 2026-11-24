@@ -184,7 +184,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Header com Boas-Vindas e Ação Principal */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', marginBottom: '28px' }}>
         <div>
           <h1 style={{ fontSize: '1.9rem', fontWeight: 700, marginBottom: '6px' }}>
             Painel de Tratamentos Ortodônticos
@@ -207,7 +207,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Métricas do Dashboard */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
+      <div className="responsive-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -271,7 +271,7 @@ export default function DashboardPage() {
 
       {/* Seção da Tabela de Casos */}
       <div className="glass-panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
           <div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Casos em Andamento</h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -279,8 +279,8 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div style={{ position: 'relative', width: '280px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', flex: '1 1 260px', justifyContent: 'flex-end' }}>
+            <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
               <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"

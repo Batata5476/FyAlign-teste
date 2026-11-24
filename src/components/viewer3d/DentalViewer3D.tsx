@@ -467,7 +467,7 @@ export function DentalViewer3D({
         gap: '12px'
       }}>
         {/* Vistas Anatômicas Pré-definidas (F4.05) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', marginRight: '4px' }}>
             Vistas:
           </span>
@@ -519,6 +519,7 @@ export function DentalViewer3D({
             style={{
               display: 'flex',
               alignItems: 'center',
+              flexWrap: 'wrap',
               gap: '6px',
               background: 'rgba(0,0,0,0.4)',
               border: '1px solid var(--border-subtle)',
@@ -600,7 +601,7 @@ export function DentalViewer3D({
         )}
 
         {/* Modos Especiais: Material, Attachments, Heatmap */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {/* Seletor Gesso / Esmalte */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'rgba(0,0,0,0.3)', padding: '3px', borderRadius: '6px' }}>
             <button
@@ -790,14 +791,14 @@ export function DentalViewer3D({
 
       {/* Bottom Bar: Timeline Slider & Controles de Reprodução (F4.09) */}
       <div style={{
-        padding: '16px 24px',
+        padding: '14px 16px',
         background: 'rgba(10, 23, 42, 0.95)',
         borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
           {/* Botões Play / Pause / Skip */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button

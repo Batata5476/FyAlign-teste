@@ -22,6 +22,8 @@ import {
   Lock,
   Settings,
   KeyRound,
+  Menu,
+  X,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OrganizationSwitcher } from '@/components/auth/OrganizationSwitcher';
@@ -54,6 +56,12 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [user, setUser] = useState<FrontendAuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Fecha menu mobile automaticamente ao navegar para outra rota
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const loadUser = useCallback(async () => {
     try {
@@ -228,12 +236,18 @@ export default function DashboardLayout({
 
   return (
     <div className="app-container">
-      {/* Sidebar Lateral */}
-      <aside className="app-sidebar">
+      {/* Backdrop do Drawer Mobile */}
+      <div
+        className={`sidebar-backdrop ${mobileMenuOpen ? 'open' : ''}`}
+        onClick={() => setMobileMenuOpen(false)}
+      />
+
+      {/* Sidebar Lateral (Fixa no Desktop / Drawer Deslizante no Celular) */}
+      <aside className={`app-sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         {/* Brand Header */}
         <div
           style={{
-            padding: '24px',
+            padding: '20px 20px',
             borderBottom: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
@@ -279,6 +293,15 @@ export default function DashboardLayout({
               {user?.organization?.type === 'FYALIGN' ? 'Laboratório Central' : 'Doctor Portal B2B'}
             </p>
           </div>
+
+          <button
+            type="button"
+            className="mobile-sidebar-close"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Fechar menu"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Card do Tenant Ativo */}
@@ -530,8 +553,18 @@ export default function DashboardLayout({
             gap: '16px',
           }}
         >
-          {/* Lado Esquerdo: Switcher de Organização e Vínculo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {/* Lado Esquerdo: Botão Menu Mobile + Switcher de Organização e Vínculo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', minWidth: 0 }}>
+            <button
+              type="button"
+              className="mobile-menu-toggle"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Abrir menu lateral"
+              title="Menu de Navegação"
+            >
+              <Menu size={20} />
+            </button>
+
             {user && (
               <OrganizationSwitcher
                 user={user}
@@ -602,8 +635,9 @@ export default function DashboardLayout({
           </div>
 
           {/* Lado Direito: Sessão Auditada + Notificações + ThemeToggle */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
             <span
+              className="header-audit-badge"
               style={{
                 background: 'var(--badge-approved-bg)',
                 color: 'var(--badge-approved-text)',
