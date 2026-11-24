@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
         select: {
           id: true,
           shipmentCode: true,
-          carrier: true,
+          carrierName: true,
           trackingCode: true,
           status: true,
         },
@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
           ? {
               orderCode: latestShipment.shipmentCode,
               trackingCode: latestShipment.trackingCode,
-              carrierName: latestShipment.carrier,
+              carrierName: latestShipment.carrierName,
             }
           : null),
       latestServiceOrder: c.serviceOrders?.[0] || null,
