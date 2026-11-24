@@ -32,8 +32,25 @@ interface KanbanCase {
   patient: { fullName: string };
   doctor: { fullName: string; professionalIdCro?: string | null };
   assignedPlanner?: { id: string; fullName: string } | null;
-  activeSetup?: { id: string; versionNumber: number; upperAlignersCount: number; lowerAlignersCount: number } | null;
+  activeSetup?: { id: string; versionNumber: number; status?: string; upperAlignersCount: number; lowerAlignersCount: number } | null;
   activeOrder?: { orderCode: string; trackingCode?: string | null } | null;
+  latestServiceOrder?: {
+    id: string;
+    orderNumber: string;
+    type: string;
+    status: string;
+    nemoStatus?: string;
+    alignerRangeStart?: number | null;
+    alignerRangeEnd?: number | null;
+  } | null;
+  serviceOrdersCount?: number;
+  hasPendingSecondBatch?: boolean;
+  hasActiveRefinement?: boolean;
+  commercialContract?: {
+    contractCode: string;
+    status: string;
+    packageName: string;
+  } | null;
 }
 
 const COLUMNS_CONFIG = [
@@ -305,9 +322,16 @@ export default function LabKanbanPage() {
                   <div className="column-cards-container">
                   {caseList.map((c) => (
                     <div key={c.id} className={`kanban-card ${c.isSlaBreached ? 'card-sla-breached' : ''}`}>
-                      {/* SLA Alert Badge */}
+                      {/* SLA Alert Badge + Link Direto para Ficha 360° */}
                       <div className="card-top-row">
-                        <span className="card-code">{c.caseCode}</span>
+                        <span
+                          className="card-code"
+                          onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                          style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                          title="Abrir Ficha 360° deste tratamento"
+                        >
+                          {c.caseCode}
+                        </span>
                         {c.isSlaBreached ? (
                           <span className="sla-badge-alert">
                             <AlertTriangle size={12} /> SLA +{c.hoursElapsed}h
@@ -320,9 +344,77 @@ export default function LabKanbanPage() {
                       </div>
 
                       {/* Dados Clínicos */}
-                      <div className="card-patient-name">{c.patient.fullName}</div>
+                      <div
+                        className="card-patient-name"
+                        onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                        style={{ cursor: 'pointer' }}
+                        title="Abrir Ficha 360°"
+                      >
+                        {c.patient.fullName}
+                      </div>
                       <div className="card-clinic-info">
                         {c.clinic.tradeName} ({c.clinic.city}-{c.clinic.state})
+                      </div>
+
+                      {/* Badges Operacionais Fase B (OS / 2ª Leva / Refinamento / Contrato) */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                        {c.latestServiceOrder && (
+                          <span
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '5px',
+                              background: 'rgba(0, 210, 211, 0.12)',
+                              color: 'var(--cyan-primary)',
+                              border: '1px solid rgba(0, 210, 211, 0.25)',
+                            }}
+                          >
+                            {c.latestServiceOrder.type === 'SECOND_BATCH'
+                              ? '2ª Leva'
+                              : c.latestServiceOrder.type === 'REFINEMENT'
+                              ? 'Refinamento'
+                              : 'OS Inicial'}{' '}
+                            • {c.latestServiceOrder.status}
+                          </span>
+                        )}
+                        {c.hasPendingSecondBatch && (
+                          <span
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '5px',
+                              background: 'rgba(245, 158, 11, 0.16)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(245, 158, 11, 0.35)',
+                            }}
+                          >
+                            Radar 2ª Leva
+                          </span>
+                        )}
+                        {c.commercialContract && (
+                          <span
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              padding: '2px 6px',
+                              borderRadius: '5px',
+                              background:
+                                c.commercialContract.status === 'CONFIRMED' ||
+                                c.commercialContract.status === 'AMENDED'
+                                  ? 'rgba(16, 185, 129, 0.14)'
+                                  : 'rgba(245, 158, 11, 0.14)',
+                              color:
+                                c.commercialContract.status === 'CONFIRMED' ||
+                                c.commercialContract.status === 'AMENDED'
+                                  ? '#34d399'
+                                  : '#fbbf24',
+                            }}
+                          >
+                            Contrato: {c.commercialContract.status}
+                          </span>
+                        )}
                       </div>
 
                       {/* Setup Info */}
@@ -341,6 +433,15 @@ export default function LabKanbanPage() {
 
                       {/* Ações do Card */}
                       <div className="card-actions-row">
+                        <button
+                          title="Abrir Ficha 360° Completa do Tratamento"
+                          className="btn-card-action"
+                          onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                          style={{ fontSize: '0.72rem', fontWeight: 700, gap: '4px', padding: '5px 8px' }}
+                        >
+                          <span>360°</span>
+                        </button>
+
                         {c.activeSetup && canViewSetup && (
                           <button
                             title="Visualizar Setup 3D"

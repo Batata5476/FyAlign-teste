@@ -151,9 +151,9 @@ export function CaseWizard() {
         // Verifica patientId pré-selecionado (vindo da Ficha 360° ou lista de Pacientes) ou caseId na URL / LocalStorage
         const params = new URLSearchParams(window.location.search);
         const urlPatientId = params.get('patientId');
+        const explicitUrlCaseId = params.get('caseId') || params.get('id');
         const urlCaseId =
-          params.get('caseId') ||
-          params.get('id') ||
+          explicitUrlCaseId ||
           (urlPatientId ? null : localStorage.getItem(STORAGE_DRAFT_KEY));
         const urlStep = parseInt(params.get('step') || '2', 10) as WizardStepNumber;
 
@@ -165,29 +165,39 @@ export function CaseWizard() {
             const caseRes = await fetch(`/api/cases/${urlCaseId}`);
             if (caseRes.ok) {
               const caseData = await caseRes.json();
-              loadedCase = caseData.case;
+              // Se veio apenas do cache localStorage mas o caso já foi submetido, ignora o cache e inicia novo pedido
+              if (!explicitUrlCaseId && caseData.case && caseData.case.status !== 'DRAFT') {
+                localStorage.removeItem(STORAGE_DRAFT_KEY);
+                loadedCase = null;
+              } else {
+                loadedCase = caseData.case;
+              }
+            } else if (!explicitUrlCaseId) {
+              localStorage.removeItem(STORAGE_DRAFT_KEY);
             }
 
-            // Carrega slots de arquivos
-            const filesRes = await fetch(`/api/cases/${urlCaseId}/files`);
-            if (filesRes.ok) {
-              const filesData = await filesRes.json();
-              if (Array.isArray(filesData.slots)) {
-                filesData.slots.forEach((s: any) => {
-                  if (loadedFilesMap[s.slotNumber]) {
-                    const isUploaded = s.file?.status === 'UPLOADED';
-                    const isImage = s.file?.mimeType?.startsWith('image/') ||
-                      ['.jpg', '.jpeg', '.png', '.heic'].some((ext) => (s.file?.originalFileName || '').toLowerCase().endsWith(ext));
-                    loadedFilesMap[s.slotNumber] = {
-                      ...loadedFilesMap[s.slotNumber],
-                      status: isUploaded ? 'UPLOADED' : 'EMPTY',
-                      originalFileName: s.file?.originalFileName,
-                      fileSizeBytes: s.file?.fileSizeBytes,
-                      fileId: s.file?.id,
-                      previewUrl: isUploaded && isImage ? `/api/cases/${urlCaseId}/files/${s.file.id}` : undefined,
-                    };
-                  }
-                });
+            if (loadedCase) {
+              // Carrega slots de arquivos
+              const filesRes = await fetch(`/api/cases/${urlCaseId}/files`);
+              if (filesRes.ok) {
+                const filesData = await filesRes.json();
+                if (Array.isArray(filesData.slots)) {
+                  filesData.slots.forEach((s: any) => {
+                    if (loadedFilesMap[s.slotNumber]) {
+                      const isUploaded = s.file?.status === 'UPLOADED';
+                      const isImage = s.file?.mimeType?.startsWith('image/') ||
+                        ['.jpg', '.jpeg', '.png', '.heic'].some((ext) => (s.file?.originalFileName || '').toLowerCase().endsWith(ext));
+                      loadedFilesMap[s.slotNumber] = {
+                        ...loadedFilesMap[s.slotNumber],
+                        status: isUploaded ? 'UPLOADED' : 'EMPTY',
+                        originalFileName: s.file?.originalFileName,
+                        fileSizeBytes: s.file?.fileSizeBytes,
+                        fileId: s.file?.id,
+                        previewUrl: isUploaded && isImage ? `/api/cases/${urlCaseId}/files/${s.file.id}` : undefined,
+                      };
+                    }
+                  });
+                }
               }
             }
           } catch (e) {
@@ -625,8 +635,22 @@ export function CaseWizard() {
           </p>
         </div>
 
-        {/* Indicador de Salvamento Automático */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+        {/* Indicador de Salvamento Automático + Botão Iniciar Novo Rascunho */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+          {draft.caseId && (
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem(STORAGE_DRAFT_KEY);
+                window.location.href = '/dashboard/cases/new';
+              }}
+              className="btn-secondary"
+              style={{ padding: '5px 12px', fontSize: '0.76rem' }}
+              title="Limpar rascunho em tela e iniciar um novo pedido em branco"
+            >
+              + Iniciar Pedido em Branco
+            </button>
+          )}
           {draft.isSaving ? (
             <span style={{ color: 'var(--cyan-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Loader2 size={14} className="spin" />

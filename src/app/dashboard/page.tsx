@@ -13,17 +13,29 @@ import {
   Filter,
   ArrowUpRight,
   ShieldCheck,
-  Check
+  Check,
+  Edit3,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
+
+type CaseFilterTab = 'ALL' | 'SETUP_READY' | 'PLANNING' | 'PRODUCTION' | 'DRAFT' | 'DELIVERED';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, can } = useAuth();
   const canReadCases = can('CASE_READ');
+  const canReadContracts = can('CONTRACT_READ');
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<CaseFilterTab>('ALL');
+
+  // Redirecionamento automático inteligente para personas estritamente comerciais (ex: FINANCE / Dr. Paulo)
+  useEffect(() => {
+    if (!canReadCases && canReadContracts) {
+      router.replace('/dashboard/contracts');
+    }
+  }, [canReadCases, canReadContracts, router]);
 
   useEffect(() => {
     async function loadCases() {
@@ -65,6 +77,8 @@ export default function DashboardPage() {
           </span>
         );
       case 'IN_PRODUCTION':
+      case 'QUALITY_CONTROL':
+      case 'QC':
         return (
           <span className="badge badge-production">
             <Clock size={12} />
@@ -72,6 +86,8 @@ export default function DashboardPage() {
           </span>
         );
       case 'COMPLETED':
+      case 'DELIVERED':
+      case 'DISPATCHED':
         return (
           <span className="badge badge-approved">
             <CheckCircle2 size={12} />
@@ -80,6 +96,8 @@ export default function DashboardPage() {
         );
       case 'SUBMITTED':
       case 'CAD_DESIGN':
+      case 'IN_PLANNING_3D':
+      case 'PLANNING':
         return (
           <span className="badge badge-draft" style={{ color: 'var(--cyan-primary)' }}>
             <Clock size={12} />
@@ -101,6 +119,7 @@ export default function DashboardPage() {
           </span>
         );
       case 'REJECTED':
+      case 'REVISION_REQUESTED':
         return (
           <span className="badge badge-danger">
             <AlertCircle size={12} />
@@ -108,47 +127,76 @@ export default function DashboardPage() {
           </span>
         );
       default:
-        return (
-          <span className="badge badge-draft">
-            {status}
-          </span>
-        );
+        return <span className="badge badge-draft">{status}</span>;
     }
   };
 
-  const filteredCases = cases.filter(c =>
-    c.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.caseCode?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const matchesStatusTab = (c: any, tab: CaseFilterTab): boolean => {
+    if (tab === 'ALL') return true;
+    if (tab === 'SETUP_READY') {
+      return ['SETUP_AVAILABLE', 'WAITING_DOCTOR_APPROVAL'].includes(c.status);
+    }
+    if (tab === 'PLANNING') {
+      return ['SUBMITTED', 'CAD_DESIGN', 'IN_PLANNING_3D', 'PLANNING', 'PENDING_DOCS', 'REJECTED'].includes(c.status);
+    }
+    if (tab === 'PRODUCTION') {
+      return ['APPROVED', 'APPROVED_BY_DOCTOR', 'IN_PRODUCTION', 'QUALITY_CONTROL', 'QC'].includes(c.status);
+    }
+    if (tab === 'DRAFT') {
+      return c.status === 'DRAFT';
+    }
+    if (tab === 'DELIVERED') {
+      return ['DISPATCHED', 'DELIVERED', 'COMPLETED'].includes(c.status);
+    }
+    return true;
+  };
 
-  const setupsReadyCount = cases.filter(
-    c => c.status === 'SETUP_AVAILABLE' || c.status === 'WAITING_DOCTOR_APPROVAL'
+  const filteredCases = cases.filter((c) => {
+    const matchesSearch =
+      !searchTerm.trim() ||
+      c.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.caseCode?.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch && matchesStatusTab(c, statusFilter);
+  });
+
+  const setupsReadyCount = cases.filter((c) =>
+    ['SETUP_AVAILABLE', 'WAITING_DOCTOR_APPROVAL'].includes(c.status)
   ).length;
-  const inProductionCount = cases.filter(c => c.status === 'IN_PRODUCTION').length;
-  const draftsCount = cases.filter(c => c.status === 'DRAFT').length;
+  const inProductionCount = cases.filter((c) =>
+    ['APPROVED', 'APPROVED_BY_DOCTOR', 'IN_PRODUCTION', 'QUALITY_CONTROL'].includes(c.status)
+  ).length;
+  const draftsCount = cases.filter((c) => c.status === 'DRAFT').length;
 
   return (
     <div>
       {/* Banner Institucional de Conformidade e Governança */}
-      <div className="glass-panel" style={{
-        padding: '16px 22px',
-        marginBottom: '26px',
-        borderLeft: '4px solid var(--cyan-primary)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: 'rgba(0, 210, 211, 0.05)'
-      }}>
+      <div
+        className="glass-panel"
+        style={{
+          padding: '16px 22px',
+          marginBottom: '26px',
+          borderLeft: '4px solid var(--cyan-primary)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '14px',
+          background: 'rgba(0, 210, 211, 0.05)',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            background: 'rgba(0, 210, 211, 0.15)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
+          <div
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'rgba(0, 210, 211, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
             <ShieldCheck size={22} color="var(--cyan-primary)" />
           </div>
           <div>
@@ -161,7 +209,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {can('CONTRACT_READ') && (
             <button
               onClick={() => router.push('/dashboard/contracts')}
@@ -184,7 +232,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Header com Boas-Vindas e Ação Principal */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', marginBottom: '28px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '14px',
+          marginBottom: '24px',
+        }}
+      >
         <div>
           <h1 style={{ fontSize: '1.9rem', fontWeight: 700, marginBottom: '6px' }}>
             Painel de Tratamentos Ortodônticos
@@ -206,12 +263,32 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Métricas do Dashboard */}
-      <div className="responsive-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
-        <div className="glass-panel" style={{ padding: '20px' }}>
+      {/* Métricas Interativas do Dashboard (Clicar filtra a tabela) */}
+      <div
+        className="responsive-grid-4"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '20px',
+          marginBottom: '28px',
+        }}
+      >
+        <div
+          onClick={() => setStatusFilter('ALL')}
+          className="glass-panel"
+          style={{
+            padding: '20px',
+            cursor: 'pointer',
+            border:
+              statusFilter === 'ALL'
+                ? '1.5px solid var(--cyan-primary)'
+                : '1px solid var(--border-card)',
+          }}
+          title="Mostrar todos os tratamentos"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-              Total de Casos
+              Total de Tratamentos
             </span>
             <FileText size={20} color="#64748b" />
           </div>
@@ -219,11 +296,23 @@ export default function DashboardPage() {
             {cases.length}
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Cadastrados na sua clínica
+            Vinculados à organização ativa
           </p>
         </div>
 
-        <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(0, 210, 211, 0.3)' }}>
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'SETUP_READY' ? 'ALL' : 'SETUP_READY')}
+          className="glass-panel"
+          style={{
+            padding: '20px',
+            cursor: 'pointer',
+            border:
+              statusFilter === 'SETUP_READY'
+                ? '1.5px solid var(--cyan-primary)'
+                : '1px solid rgba(0, 210, 211, 0.3)',
+          }}
+          title="Filtrar tratamentos com Setup 3D pronto para análise"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <span style={{ fontSize: '0.82rem', color: 'var(--cyan-primary)', fontWeight: 600, textTransform: 'uppercase' }}>
               Setups Prontos
@@ -234,26 +323,50 @@ export default function DashboardPage() {
             {setupsReadyCount}
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-cyan)', marginTop: '4px' }}>
-            Aguardando sua aprovação formal
+            Aguardando aprovação clínica
           </p>
         </div>
 
-        <div className="glass-panel" style={{ padding: '20px' }}>
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'PRODUCTION' ? 'ALL' : 'PRODUCTION')}
+          className="glass-panel"
+          style={{
+            padding: '20px',
+            cursor: 'pointer',
+            border:
+              statusFilter === 'PRODUCTION'
+                ? '1.5px solid var(--cyan-primary)'
+                : '1px solid var(--border-card)',
+          }}
+          title="Filtrar tratamentos em produção fabril"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-            <span style={{ fontSize: '0.82rem', color: 'var(--amber-warning)', fontWeight: 600, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '0.82rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase' }}>
               Em Fabricação
             </span>
-            <Clock size={20} color="var(--amber-warning)" />
+            <Clock size={20} color="#fbbf24" />
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-main)' }}>
             {inProductionCount}
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Impressão 3D e corte laser
+            Impressão 3D, termoformagem e QC
           </p>
         </div>
 
-        <div className="glass-panel" style={{ padding: '20px' }}>
+        <div
+          onClick={() => setStatusFilter(statusFilter === 'DRAFT' ? 'ALL' : 'DRAFT')}
+          className="glass-panel"
+          style={{
+            padding: '20px',
+            cursor: 'pointer',
+            border:
+              statusFilter === 'DRAFT'
+                ? '1.5px solid var(--cyan-primary)'
+                : '1px solid var(--border-card)',
+          }}
+          title="Filtrar rascunhos em preenchimento no Wizard"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
             <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
               Rascunhos
@@ -264,24 +377,37 @@ export default function DashboardPage() {
             {draftsCount}
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Pendente envio de arquivos
+            Pendente conclusão no Wizard
           </p>
         </div>
       </div>
 
       {/* Seção da Tabela de Casos */}
       <div className="glass-panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            marginBottom: '16px',
+          }}
+        >
           <div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Casos em Andamento</h3>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Tratamentos & Solicitações</h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Lista de casos vinculados a {user?.organization?.tradeName || 'sua organização'}
+              Clique em qualquer tratamento para abrir sua Ficha 360° completa ({user?.organization?.tradeName || 'sua organização'})
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', flex: '1 1 260px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flex: '1 1 260px', justifyContent: 'flex-end' }}>
             <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
-              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Search
+                size={16}
+                color="var(--text-muted)"
+                style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
+              />
               <input
                 type="text"
                 placeholder="Buscar por paciente ou código..."
@@ -291,27 +417,54 @@ export default function DashboardPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-
-            <button className="btn-secondary" style={{ height: '40px', padding: '0 14px' }}>
-              <Filter size={16} />
-              <span>Filtrar</span>
-            </button>
           </div>
+        </div>
+
+        {/* Barra de Filtros Rápidos Ativa */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '18px' }}>
+          {(
+            [
+              { id: 'ALL', label: `Todos (${cases.length})` },
+              { id: 'SETUP_READY', label: `Setups Prontos (${setupsReadyCount})` },
+              { id: 'PLANNING', label: 'Em Planejamento CAD' },
+              { id: 'PRODUCTION', label: `Em Fabricação (${inProductionCount})` },
+              { id: 'DELIVERED', label: 'Entregues' },
+              { id: 'DRAFT', label: `Rascunhos (${draftsCount})` },
+            ] as { id: CaseFilterTab; label: string }[]
+          ).map((tab) => {
+            const active = statusFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: active ? 700 : 500,
+                  cursor: 'pointer',
+                  border: active ? '1px solid var(--cyan-primary)' : '1px solid var(--border-subtle)',
+                  background: active ? 'rgba(0, 210, 211, 0.14)' : 'var(--btn-ghost-bg)',
+                  color: active ? 'var(--cyan-primary)' : 'var(--text-muted)',
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {!canReadCases ? (
           <div style={{ textAlign: 'center', padding: '56px 16px' }}>
             <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 600, marginBottom: '8px' }}>
-              Superfície Estritamente Comercial e Contratual ({user?.role})
+              Redirecionando para a Carteira de Contratos Comerciais...
             </p>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', maxWidth: '560px', margin: '0 auto 20px' }}>
-              Por conformidade LGPD, o seu vínculo não possui acesso direto a prontuários, fotografias ou planejamentos clínicos. Utilize o módulo dedicado de Contratos para confirmar fechamentos, emitir aditivos e homologar refinamentos.
-            </p>
-            {can('CONTRACT_READ') && (
+            {canReadContracts && (
               <button
                 onClick={() => router.push('/dashboard/contracts')}
                 className="btn-primary"
-                style={{ padding: '12px 24px' }}
+                style={{ padding: '12px 24px', marginTop: '10px' }}
               >
                 <FileText size={16} />
                 <span>Abrir Gestão de Contratos</span>
@@ -320,18 +473,29 @@ export default function DashboardPage() {
           </div>
         ) : loading ? (
           <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
-            Carregando casos clínicos...
+            Carregando tratamentos...
           </div>
         ) : filteredCases.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <p style={{ fontSize: '1.1rem', color: 'var(--text-muted)', marginBottom: '16px' }}>Nenhum caso clínico encontrado.</p>
-            {can('CASE_CREATE') && (
+            <p style={{ fontSize: '1.05rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Nenhum tratamento encontrado para o filtro selecionado.
+            </p>
+            {statusFilter !== 'ALL' || searchTerm ? (
               <button
-                onClick={() => router.push('/dashboard/cases/new')}
-                className="btn-primary"
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setSearchTerm('');
+                }}
+                className="btn-secondary"
               >
-                Criar Primeiro Caso
+                Limpar Filtros
               </button>
+            ) : (
+              can('CASE_CREATE') && (
+                <button onClick={() => router.push('/dashboard/cases/new')} className="btn-primary">
+                  Criar Primeiro Pedido Inicial
+                </button>
+              )
             )}
           </div>
         ) : (
@@ -345,80 +509,88 @@ export default function DashboardPage() {
                   <th>Status Operacional</th>
                   <th>Alinhadores</th>
                   <th>Data Registro</th>
-                  <th style={{ textAlign: 'right' }}>Ação</th>
+                  <th style={{ textAlign: 'right' }}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCases.map((c) => {
                   const latestSetup = c.setups?.[0];
+                  const isDraft = c.status === 'DRAFT';
+                  const isSetupReady = ['SETUP_AVAILABLE', 'WAITING_DOCTOR_APPROVAL'].includes(c.status);
+
                   return (
-                    <tr key={c.id}>
-                      <td style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--cyan-primary)' }}>
+                    <tr
+                      key={c.id}
+                      onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--cyan-primary)' }}>
                         {c.caseCode}
                       </td>
                       <td>
-                        <div
-                          onClick={() => {
-                            if (can('PATIENT_READ') && c.patient?.id) {
-                              router.push(`/dashboard/patients/${c.patient.id}`);
-                            } else {
-                              router.push(`/dashboard/cases/${c.id}`);
-                            }
-                          }}
-                          style={{ fontWeight: 600, color: 'var(--text-main)', cursor: 'pointer' }}
-                          title="Abrir Ficha 360°"
-                        >
+                        <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>
                           {c.patient?.fullName}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          {c.chiefComplaint?.substring(0, 45)}...
-                        </div>
+                        {c.chiefComplaint && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            {c.chiefComplaint.length > 48
+                              ? `${c.chiefComplaint.substring(0, 48)}...`
+                              : c.chiefComplaint}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                           {c.treatedArches === 'BOTH' ? 'Superior & Inferior' : c.treatedArches}
                         </span>
                       </td>
-                      <td>
-                        {getStatusBadge(c.status)}
-                      </td>
+                      <td>{getStatusBadge(c.status)}</td>
                       <td>
                         {latestSetup ? (
                           <div style={{ fontSize: '0.82rem' }}>
-                            <strong style={{ color: 'var(--cyan-primary)' }}>{latestSetup.upperAlignersCount}</strong> Sup / <strong style={{ color: 'var(--cyan-primary)' }}>{latestSetup.lowerAlignersCount}</strong> Inf
+                            <strong style={{ color: 'var(--cyan-primary)' }}>{latestSetup.upperAlignersCount}</strong> Sup /{' '}
+                            <strong style={{ color: 'var(--cyan-primary)' }}>{latestSetup.lowerAlignersCount}</strong> Inf
                           </div>
                         ) : (
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Não planejado</span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Em planejamento</span>
                         )}
                       </td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                         {new Date(c.createdAt).toLocaleDateString('pt-BR')}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {c.status === 'SETUP_AVAILABLE' && can('SETUP_READ') ? (
+                      <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'inline-flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {isDraft && can('CASE_CREATE') && (
+                            <button
+                              onClick={() => router.push(`/dashboard/cases/new?caseId=${c.id}`)}
+                              className="btn-primary"
+                              style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                              title="Retomar preenchimento deste pedido no Wizard"
+                            >
+                              <Edit3 size={13} />
+                              <span>Continuar Pedido</span>
+                            </button>
+                          )}
+
+                          {isSetupReady && can('SETUP_READ') && (
+                            <button
+                              onClick={() => router.push(`/dashboard/cases/${c.id}/setup`)}
+                              className="btn-primary"
+                              style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+                            >
+                              <span>Analisar Setup 3D</span>
+                              <ArrowUpRight size={13} />
+                            </button>
+                          )}
+
                           <button
-                            onClick={() => router.push(`/dashboard/cases/${c.id}/setup`)}
-                            className="btn-primary"
-                            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
-                          >
-                            <span>Analisar Setup 3D</span>
-                            <ArrowUpRight size={14} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              router.push(
-                                can('PATIENT_READ') && c.patient?.id
-                                  ? `/dashboard/patients/${c.patient.id}`
-                                  : `/dashboard/cases/${c.id}`
-                              )
-                            }
+                            onClick={() => router.push(`/dashboard/cases/${c.id}`)}
                             className="btn-secondary"
-                            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+                            style={{ fontSize: '0.78rem', padding: '6px 12px' }}
                           >
-                            <span>Abrir Visão 360°</span>
+                            <span>Ficha 360°</span>
                           </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );

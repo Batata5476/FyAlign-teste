@@ -658,11 +658,12 @@ export default function DashboardLayout({
             <ThemeToggle />
 
             <button
-              title="Notificações"
+              title="Configurações da Conta"
+              onClick={() => router.push('/dashboard/settings')}
               style={{
-                background: 'var(--btn-ghost-bg)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-muted)',
+                background: pathname === '/dashboard/settings' ? 'rgba(0, 210, 211, 0.14)' : 'var(--btn-ghost-bg)',
+                border: pathname === '/dashboard/settings' ? '1px solid var(--cyan-primary)' : '1px solid var(--border-subtle)',
+                color: pathname === '/dashboard/settings' ? 'var(--cyan-primary)' : 'var(--text-muted)',
                 borderRadius: '50%',
                 width: '38px',
                 height: '38px',
@@ -673,7 +674,7 @@ export default function DashboardLayout({
                 transition: 'all 0.2s ease',
               }}
             >
-              <Bell size={16} />
+              <Settings size={16} />
             </button>
           </div>
         </header>

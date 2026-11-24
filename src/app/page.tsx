@@ -204,26 +204,26 @@ export default function LoginPage() {
             </form>
 
             {/* Acesso Rápido para Demonstração de Perfis RBAC */}
-            <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border-subtle)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 <UserCheck size={14} color="var(--cyan-primary)" />
-                <span>Alternar Perfil Demo (Fase 1 RBAC):</span>
+                <span>Acesso Rápido por Persona (Clínica & Laboratório):</span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <button
                   type="button"
                   className="btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '8px', justifyContent: 'flex-start' }}
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
                   onClick={() => handleQuickLogin('roberto@odontoprime.com.br')}
                 >
-                  👨‍⚕️ Dr. Roberto (CRO)
+                  👨‍⚕️ Dr. Roberto (Ortodontista)
                 </button>
 
                 <button
                   type="button"
                   className="btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '8px', justifyContent: 'flex-start' }}
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
                   onClick={() => handleQuickLogin('larissa@odontoprime.com.br')}
                 >
                   👩‍💼 Larissa (Assistente)
@@ -232,19 +232,46 @@ export default function LoginPage() {
                 <button
                   type="button"
                   className="btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '8px', justifyContent: 'flex-start' }}
-                  onClick={() => handleQuickLogin('planner@fyalign.com')}
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
+                  onClick={() => handleQuickLogin('felipe@fyalign.com')}
                 >
-                  🔬 Lucas (Lab 3D)
+                  🏭 Felipe (Conferência & QC)
                 </button>
 
                 <button
                   type="button"
                   className="btn-secondary"
-                  style={{ fontSize: '0.78rem', padding: '8px', justifyContent: 'flex-start' }}
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
+                  onClick={() => handleQuickLogin('adriano@fyalign.com')}
+                >
+                  🔬 Dr. Adriano (Planejador 3D)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
+                  onClick={() => handleQuickLogin('lais@fyalign.com')}
+                >
+                  💬 Laís (Comercial & Suporte)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start' }}
+                  onClick={() => handleQuickLogin('paulo@fyalign.com')}
+                >
+                  💼 Dr. Paulo (Financeiro)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '0.76rem', padding: '8px 10px', justifyContent: 'flex-start', gridColumn: '1 / -1' }}
                   onClick={() => handleQuickLogin('admin@fyalign.com')}
                 >
-                  👑 Admin FyAlign
+                  👑 Administrador Geral FyAlign (Visão Completa)
                 </button>
               </div>
             </div>
@@ -266,8 +293,8 @@ export default function LoginPage() {
       }}>
         <div>© 2026 FyAlign Clear Aligners. Todos os direitos reservados. Portal Odontológico B2B.</div>
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <span>Termo de Consentimento TCLE</span>
-          <span>Privacidade & LGPD</span>
+          <a href="/terms" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Termo de Consentimento TCLE</a>
+          <a href="/privacy" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Privacidade & LGPD</a>
           <span>Suporte Técnico: 0800 900 FYALIGN</span>
         </div>
       </footer>
